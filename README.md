@@ -95,7 +95,7 @@ You need a GitHub account. Nothing to install.
 5. **Settings** > **Pages** > **Build and deployment**: Source **Deploy from a branch**, Branch `gh-pages`, folder `/ (root)`, **Save**. GitHub usually has Pages on already for a repo named `<your-username>.github.io`, serving `main`; you only change the branch.
 6. Re-run the workflow. When it is green, the run summary lists each pin with its CID and links.
 
-The [template README](https://github.com/ipni/gitpin-template#readme) walks through the same steps for people new to GitHub Actions. Already have a `<your-username>.github.io` repo? See [Use a custom domain](#use-a-custom-domain).
+The [template README](https://github.com/ipni/gitpin-template#readme) walks through the same steps for people new to GitHub Actions. Already have a `<your-username>.github.io` repo? If you already use it for a website, adding gitpin to it would replace that website, so [use a custom domain](#use-a-custom-domain) or create the repo under a GitHub organization you own.
 
 ## Why gitpin
 
@@ -174,6 +174,8 @@ jobs:
 ```
 
 Keep `actions/checkout` with its default credentials: `persist-credentials: false` breaks the push to `gh-pages`.
+
+The `concurrency` group is required, not optional: two overlapping runs each force-push their own snapshot of `gh-pages`, and the losing run's published files are silently dropped.
 
 Inputs of `ipni/gitpin@v1`:
 

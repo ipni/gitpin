@@ -169,6 +169,40 @@ func TestPublishBaseURLTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := [][2]string{
+		{"https://Alice.github.io", "https://alice.github.io"},
+		{"https://alice.github.io", "https://alice.github.io"},
+		{"https://Alice.github.io/", "https://alice.github.io"},
+		{"https://ALICE.GitHub.IO", "https://alice.github.io"},
+	}
+	for _, c := range cases {
+		if got := normalizeBaseURL(c[0]); got != c[1] {
+			t.Errorf("normalizeBaseURL(%q) = %q, want %q", c[0], got, c[1])
+		}
+	}
+}
+
+func TestPublishBaseURLCase(t *testing.T) {
+	genKey(t)
+	content := t.TempDir()
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(content, "a.txt"), []byte("one file\n"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	if code, _, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", "https://Alice.github.io"); code != 0 {
+		t.Fatalf("first publish exit %d, stderr: %s", code, errb)
+	}
+	code, stdout, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", "https://alice.github.io")
+	if code != 0 {
+		t.Fatalf("publish with a lowercase host exit %d, stderr: %s", code, errb)
+	}
+	changed, _ := decodeHead(t, stdout)
+	if changed {
+		t.Errorf("changed = true, want false: host case must not name a different site")
+	}
+}
+
 func TestWaitIndexedEmpty(t *testing.T) {
 	dir := t.TempDir()
 	code, out, _ := run(t, "wait-indexed", "--site", dir)
