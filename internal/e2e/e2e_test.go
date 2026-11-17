@@ -40,6 +40,7 @@ import (
 const (
 	vectorKey      = "CAESQAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fA6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg="
 	vectorPeerID   = "12D3KooWA4Xop1JaT3MHxwYMkCepYsv4iPVopMXwCz5iHYdBfeSB"
+	otherPeerID    = "12D3KooWKnRvJpBcdA1eP6fHZGvNPxLJH9cM6nBqThpT7rR8Vd7d"
 	probeCID       = "bafkqaaa"
 	metadataGoIPFS = "\xa0\x12\x00"
 )
@@ -206,8 +207,10 @@ func newSyncer(t *testing.T, baseURL string, id peer.ID) (*ipnisync.Syncer, *mem
 
 // walkAds walks the advertisement chain from head (head first), syncing each ad
 // block and, for add ads, its entry-chunk chain. It never walks an ad with
-// ExploreAllRecursively, which would try to fetch schema.NoEntries.
-func walkAds(ctx context.Context, syncer *ipnisync.Syncer, store *memstore.Store, head cid.Cid) ([]adInfo, error) {
+// ExploreAllRecursively, which would try to fetch schema.NoEntries. Every ad it
+// returns, add or removal, must be signed by wantPeer and must list wantAddr as
+// its only address.
+func walkAds(ctx context.Context, syncer *ipnisync.Syncer, store *memstore.Store, head cid.Cid, wantPeer peer.ID, wantAddr string) ([]adInfo, error) {
 	var ads []adInfo
 	c := head
 	for c.Defined() {
@@ -221,6 +224,16 @@ func walkAds(ctx context.Context, syncer *ipnisync.Syncer, store *memstore.Store
 		ad, err := schema.BytesToAdvertisement(c, data)
 		if err != nil {
 			return nil, fmt.Errorf("decode ad %s: %w", c, err)
+		}
+		signer, err := ad.VerifySignature()
+		if err != nil {
+			return nil, fmt.Errorf("verify ad %s: %w", c, err)
+		}
+		if signer != wantPeer {
+			return nil, fmt.Errorf("ad %s signed by %s, want %s", c, signer, wantPeer)
+		}
+		if len(ad.Addresses) != 1 || ad.Addresses[0] != wantAddr {
+			return nil, fmt.Errorf("ad %s addresses = %v, want [%s]", c, ad.Addresses, wantAddr)
 		}
 		ads = append(ads, adInfo{Cid: c, Ad: ad})
 		if ad.Entries != nil && ad.Entries != schema.NoEntries {
@@ -274,7 +287,8 @@ func entryMultihashes(ctx context.Context, store *memstore.Store, head cid.Cid) 
 }
 
 // ipfsBlockMultihashes returns the multihash set of every block file in ipfsDir
-// except the probe CID. Any non-CID file name (e.g. a leftover .tmp) is an error.
+// except the probe CID. Every file's bytes are re-hashed and must match the CID
+// parsed from its name; any non-CID file name (e.g. a leftover .tmp) is an error.
 func ipfsBlockMultihashes(ipfsDir string) (map[string]bool, error) {
 	entries, err := os.ReadDir(ipfsDir)
 	if err != nil {
@@ -294,6 +308,17 @@ func ipfsBlockMultihashes(ipfsDir string) (map[string]bool, error) {
 		c, err := cid.Decode(e.Name())
 		if err != nil {
 			return nil, fmt.Errorf("ipfs dir has non-CID file %s: %w", e.Name(), err)
+		}
+		data, err := os.ReadFile(filepath.Join(ipfsDir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		sum, err := multihash.Sum(data, c.Prefix().MhType, c.Prefix().MhLength)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(sum, c.Hash()) {
+			return nil, fmt.Errorf("ipfs file %s hashes to %s, want %s", e.Name(), sum.B58String(), c.Hash().B58String())
 		}
 		set[string(c.Hash())] = true
 	}
@@ -463,14 +488,14 @@ func TestEndToEnd(t *testing.T) {
 		if head.String() != step1.Head {
 			t.Fatalf("GetHead = %s, want state head %s", head, step1.Head)
 		}
-		ads, err := walkAds(ctx, syncer, store, head)
+		addrStr := mustBaseAddr(t, baseURL).String()
+		ads, err := walkAds(ctx, syncer, store, head, id, addrStr)
 		if err != nil {
 			t.Fatalf("walk ads: %v", err)
 		}
 		if len(ads) != 2 {
 			t.Fatalf("ads = %d, want 2", len(ads))
 		}
-		addrStr := mustBaseAddr(t, baseURL).String()
 		wantCtx := map[string]bool{
 			string(step1Roots["hello.txt"].Bytes()): true,
 			string(step1Roots["photos"].Bytes()):    true,
@@ -485,15 +510,7 @@ func TestEndToEnd(t *testing.T) {
 				t.Errorf("ad %s has no entries, want add ad", a.Cid)
 				continue
 			}
-			signer, err := a.Ad.VerifySignature()
-			if err != nil {
-				t.Errorf("verify ad %s: %v", a.Cid, err)
-			} else if signer != id {
-				t.Errorf("ad %s signed by %s, want %s", a.Cid, signer, id)
-			}
-			if len(a.Ad.Addresses) != 1 || a.Ad.Addresses[0] != addrStr {
-				t.Errorf("ad %s addresses = %v, want [%s]", a.Cid, a.Ad.Addresses, addrStr)
-			}
+			// Signature and addresses are checked for every ad by walkAds.
 			if !bytes.Equal(a.Ad.Metadata, []byte(metadataGoIPFS)) {
 				t.Errorf("ad %s metadata = %x, want %x", a.Cid, a.Ad.Metadata, []byte(metadataGoIPFS))
 			}
@@ -614,7 +631,7 @@ func TestEndToEnd(t *testing.T) {
 		if head.String() != s.Head {
 			t.Fatalf("GetHead = %s, want %s", head, s.Head)
 		}
-		ads, err := walkAds(ctx, syncer, store, head)
+		ads, err := walkAds(ctx, syncer, store, head, id, mustBaseAddr(t, baseURL).String())
 		if err != nil {
 			t.Fatalf("walk ads: %v", err)
 		}
@@ -624,6 +641,11 @@ func TestEndToEnd(t *testing.T) {
 		notesCid := updateRoots["notes.txt"]
 		if !notesCid.Defined() {
 			t.Fatalf("notes.txt not in roots: %+v", s.Roots)
+		}
+		for name, c := range step1Roots {
+			if c == notesCid {
+				t.Errorf("notes.txt CID equals step-1 root %s (%s); its content must differ", name, c)
+			}
 		}
 		oldHello := step1Roots["hello.txt"]
 
@@ -661,6 +683,32 @@ func TestEndToEnd(t *testing.T) {
 				t.Errorf("photos block status = %d, want 200", resp.StatusCode)
 			}
 		}
+		// Re-read every block under the photos root over HTTP (each block's
+		// multihash is verified by the link system).
+		ls := httpLinkSystem(baseURL)
+		photosCid := step1Roots["photos"]
+		bigCid, err := dirChildLink(ctx, &ls, photosCid, "big.bin")
+		if err != nil {
+			t.Fatalf("photos/big.bin link after update: %v", err)
+		}
+		gotBig, err := readFileBytes(ctx, &ls, bigCid)
+		if err != nil {
+			t.Fatalf("read photos/big.bin after update: %v", err)
+		}
+		if !bytes.Equal(gotBig, bigContent) {
+			t.Errorf("photos/big.bin bytes differ after update")
+		}
+		smallCid, err := dirChildLink(ctx, &ls, photosCid, "small.txt")
+		if err != nil {
+			t.Fatalf("photos/small.txt link after update: %v", err)
+		}
+		gotSmall, err := readFileBytes(ctx, &ls, smallCid)
+		if err != nil {
+			t.Fatalf("read photos/small.txt after update: %v", err)
+		}
+		if !bytes.Equal(gotSmall, smallContent) {
+			t.Errorf("photos/small.txt bytes differ after update")
+		}
 
 		n := len(mustListAdFiles(t, siteDir))
 		if n < adFileCount {
@@ -689,6 +737,9 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("publish exit %d, stderr: %s", code, stderr)
 		}
 		s := decodeSummary(t, stdout)
+		if !s.Changed {
+			t.Errorf("changed = false, want true")
+		}
 		if len(s.Roots) != 0 {
 			t.Errorf("roots = %d, want 0 (%+v)", len(s.Roots), s.Roots)
 		}
@@ -701,7 +752,7 @@ func TestEndToEnd(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get head: %v", err)
 		}
-		ads, err := walkAds(ctx, syncer, store, head)
+		ads, err := walkAds(ctx, syncer, store, head, id, mustBaseAddr(t, baseURL).String())
 		if err != nil {
 			t.Fatalf("walk ads: %v", err)
 		}
@@ -726,6 +777,11 @@ func TestEndToEnd(t *testing.T) {
 				t.Errorf("ipfs dir still holds %s, want only %s", e.Name(), probeCID)
 			}
 		}
+		if fi, err := os.Stat(filepath.Join(siteDir, "ipfs", probeCID)); err != nil {
+			t.Errorf("missing ipfs/%s after unpin: %v", probeCID, err)
+		} else if fi.Size() != 0 {
+			t.Errorf("ipfs/%s size = %d, want 0", probeCID, fi.Size())
+		}
 
 		n := len(mustListAdFiles(t, siteDir))
 		if n < adFileCount {
@@ -749,13 +805,17 @@ func TestEndToEnd(t *testing.T) {
 	// Steps 8 and 9 use the fresh site s2 served by the second static server.
 	t.Run("announce", func(t *testing.T) {
 		content2 := t.TempDir()
-		writeFile(t, filepath.Join(content2, "only.txt"), []byte("the one and only file\n"))
+		writeFile(t, filepath.Join(content2, "one.txt"), []byte("the first s2 file\n"))
+		writeFile(t, filepath.Join(content2, "two.txt"), []byte("the second s2 file, distinct bytes\n"))
 
 		code, stdout, stderr := runCLI(t, "publish", "--content", content2, "--site", s2, "--base-url", baseURL2)
 		if code != 0 {
 			t.Fatalf("publish exit %d, stderr: %s", code, stderr)
 		}
 		s := decodeSummary(t, stdout)
+		if len(s.Roots) < 2 {
+			t.Fatalf("s2 roots = %d, want >= 2 (%+v)", len(s.Roots), s.Roots)
+		}
 		s2Head = s.Head
 		for _, r := range s.Roots {
 			c, err := cid.Decode(r.CID)
@@ -814,9 +874,17 @@ func TestEndToEnd(t *testing.T) {
 		if !strings.HasPrefix(addrs[0].String(), prefix) {
 			t.Errorf("announce addr = %s, want prefix %s", addrs[0], prefix)
 		}
+		suffix := "/p2p/" + vectorPeerID
+		if !strings.HasSuffix(addrs[0].String(), suffix) {
+			t.Errorf("announce addr = %s, want suffix %s", addrs[0], suffix)
+		}
 
 		// Failure: the step-1 server serves a different chain, so the head is
 		// never served there.
+		announceMu.Lock()
+		beforeFail := len(announced)
+		announceMu.Unlock()
+
 		code, _, stderr = runCLI(t, "announce", "--site", s2, "--base-url", baseURL,
 			"--indexer", fake.URL, "--wait-served", "200ms", "--every", "50ms")
 		if code != 1 {
@@ -825,9 +893,25 @@ func TestEndToEnd(t *testing.T) {
 		if !strings.Contains(stderr, "not serving the new head") {
 			t.Errorf("stderr = %q, want it to contain %q", stderr, "not serving the new head")
 		}
+		announceMu.Lock()
+		afterFail := len(announced)
+		announceMu.Unlock()
+		if afterFail != beforeFail {
+			t.Errorf("fake indexer got %d announce PUTs after the failed wait, want 0", afterFail-beforeFail)
+		}
 	})
 
 	t.Run("wait-indexed", func(t *testing.T) {
+		if len(s2Roots) == 0 {
+			t.Fatalf("s2 has no recorded roots; publish wrote none")
+		}
+		var queriedMu sync.Mutex
+		queried := map[string]bool{}
+		respondIndexed := func(w http.ResponseWriter, c cid.Cid, provider string) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"MultihashResults":[{"Multihash":%q,"ProviderResults":[{"Provider":{"ID":%q}}]}]}`,
+				c.Hash().B58String(), provider)
+		}
 		fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/cid/") {
 				cidStr := strings.TrimPrefix(r.URL.Path, "/cid/")
@@ -836,9 +920,10 @@ func TestEndToEnd(t *testing.T) {
 					http.Error(w, "bad cid", http.StatusBadRequest)
 					return
 				}
-				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprintf(w, `{"MultihashResults":[{"Multihash":%q,"ProviderResults":[{"Provider":{"ID":%q}}]}]}`,
-					c.Hash().B58String(), vectorPeerID)
+				queriedMu.Lock()
+				queried[cidStr] = true
+				queriedMu.Unlock()
+				respondIndexed(w, c, vectorPeerID)
 				return
 			}
 			http.NotFound(w, r)
@@ -855,6 +940,50 @@ func TestEndToEnd(t *testing.T) {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("stdout missing %q (got %q)", want, stdout)
 			}
+			queriedMu.Lock()
+			got := queried[c.String()]
+			queriedMu.Unlock()
+			if !got {
+				t.Errorf("indexer was never asked about root %s (%s)", name, c)
+			}
+		}
+
+		// A root indexed only by some other provider is never found.
+		names := make([]string, 0, len(s2Roots))
+		for name := range s2Roots {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		wrongCid := s2Roots[names[0]]
+		fakeWrong := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/cid/") {
+				cidStr := strings.TrimPrefix(r.URL.Path, "/cid/")
+				c, err := cid.Decode(cidStr)
+				if err != nil {
+					http.Error(w, "bad cid", http.StatusBadRequest)
+					return
+				}
+				provider := vectorPeerID
+				if c == wrongCid {
+					provider = otherPeerID
+				}
+				respondIndexed(w, c, provider)
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		t.Cleanup(fakeWrong.Close)
+
+		code, _, stderr = runCLI(t, "wait-indexed", "--site", s2, "--indexer", fakeWrong.URL,
+			"--timeout", "300ms", "--every", "50ms")
+		if code != 2 {
+			t.Fatalf("wait-indexed (wrong provider) exit = %d, want 2 (stderr: %s)", code, stderr)
+		}
+		if !strings.Contains(stderr, "not indexed yet") {
+			t.Errorf("stderr = %q, want it to contain %q", stderr, "not indexed yet")
+		}
+		if !strings.Contains(stderr, wrongCid.String()) {
+			t.Errorf("stderr = %q, want it to name the unindexed root %s", stderr, wrongCid)
 		}
 
 		fake404 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
