@@ -92,7 +92,29 @@ func Build(contentDir, blocksDir string) ([]Root, error) {
 			if cur != nil {
 				cur[c] = struct{}{}
 			}
-			return os.WriteFile(filepath.Join(blocksDir, c.String()), data, 0o644)
+			tmp, err := os.CreateTemp(blocksDir, "tmp-*")
+			if err != nil {
+				return fmt.Errorf("create temp: %w", err)
+			}
+			tmpName := tmp.Name()
+			if _, err := tmp.Write(data); err != nil {
+				tmp.Close()
+				os.Remove(tmpName)
+				return fmt.Errorf("write temp: %w", err)
+			}
+			if err := tmp.Close(); err != nil {
+				os.Remove(tmpName)
+				return fmt.Errorf("close temp: %w", err)
+			}
+			if err := os.Chmod(tmpName, 0o644); err != nil {
+				os.Remove(tmpName)
+				return fmt.Errorf("chmod temp: %w", err)
+			}
+			if err := os.Rename(tmpName, filepath.Join(blocksDir, c.String())); err != nil {
+				os.Remove(tmpName)
+				return fmt.Errorf("rename: %w", err)
+			}
+			return nil
 		}, nil
 	}
 

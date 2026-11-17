@@ -14,14 +14,28 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
+func writeFile(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mkdirAll(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSingleFile(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
+	mkdirAll(t, contentDir)
 
 	content := []byte("Hello from my first IPFS pin!\n")
-	os.WriteFile(filepath.Join(contentDir, "hello.txt"), content, 0o644)
+	writeFile(t, filepath.Join(contentDir, "hello.txt"), content)
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -63,9 +77,10 @@ func TestDeterminism(t *testing.T) {
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir1 := filepath.Join(tmp, "blocks1")
 	blocksDir2 := filepath.Join(tmp, "blocks2")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, "a.txt"), []byte("hello"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "b.txt"), []byte("world"), 0o644)
+	mkdirAll(t, filepath.Join(contentDir, "sub"))
+	writeFile(t, filepath.Join(contentDir, "a.txt"), []byte("hello"))
+	writeFile(t, filepath.Join(contentDir, "b.txt"), []byte("world"))
+	writeFile(t, filepath.Join(contentDir, "sub", "c.txt"), []byte("nested"))
 
 	r1, err := Build(contentDir, blocksDir1)
 	if err != nil {
@@ -83,11 +98,23 @@ func TestDeterminism(t *testing.T) {
 			t.Errorf("root %d CID mismatch", i)
 		}
 		if len(r1[i].Blocks) != len(r2[i].Blocks) {
-			t.Errorf("root %d blocks length mismatch", i)
+			t.Fatalf("root %d blocks length mismatch", i)
 		}
 		for j := range r1[i].Blocks {
 			if r1[i].Blocks[j] != r2[i].Blocks[j] {
 				t.Errorf("root %d block %d mismatch", i, j)
+			}
+			name := r1[i].Blocks[j].String()
+			d1, err := os.ReadFile(filepath.Join(blocksDir1, name))
+			if err != nil {
+				t.Fatalf("blocksDir1/%s: %v", name, err)
+			}
+			d2, err := os.ReadFile(filepath.Join(blocksDir2, name))
+			if err != nil {
+				t.Fatalf("blocksDir2/%s: %v", name, err)
+			}
+			if !bytes.Equal(d1, d2) {
+				t.Errorf("block %s content differs between dirs", name)
 			}
 		}
 	}
@@ -97,14 +124,14 @@ func TestLargeFile(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
+	mkdirAll(t, contentDir)
 
 	rng := rand.New(rand.NewSource(42))
 	data := make([]byte, 600*1024)
 	for i := range data {
 		data[i] = byte(rng.Intn(256))
 	}
-	os.WriteFile(filepath.Join(contentDir, "big.bin"), data, 0o644)
+	writeFile(t, filepath.Join(contentDir, "big.bin"), data)
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -137,12 +164,13 @@ func TestDirectoryTree(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(filepath.Join(contentDir, "site", "sub"), 0o755)
-	os.WriteFile(filepath.Join(contentDir, "site", "b.txt"), []byte("b"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "site", "a.txt"), []byte("a"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "site", ".hidden"), []byte("h"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "site", "sub", "c.txt"), []byte("c"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, ".gitkeep"), []byte(""), 0o644)
+	mkdirAll(t, filepath.Join(contentDir, "site", "sub"))
+	writeFile(t, filepath.Join(contentDir, "site", "b.txt"), []byte("b"))
+	writeFile(t, filepath.Join(contentDir, "site", "a.txt"), []byte("a"))
+	writeFile(t, filepath.Join(contentDir, "site", ".hidden"), []byte("h"))
+	writeFile(t, filepath.Join(contentDir, "site", "sub", "c.txt"), []byte("c"))
+	writeFile(t, filepath.Join(contentDir, "site", "sub", ".dotfile"), []byte("d"))
+	writeFile(t, filepath.Join(contentDir, ".gitkeep"), []byte(""))
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -163,11 +191,11 @@ func TestDirectoryTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	builder := dagpb.Type.PBNode.NewBuilder()
-	if err := dagpb.DecodeBytes(builder, blockData); err != nil {
+	bldr := dagpb.Type.PBNode.NewBuilder()
+	if err := dagpb.DecodeBytes(bldr, blockData); err != nil {
 		t.Fatal(err)
 	}
-	node := builder.Build()
+	node := bldr.Build()
 	pbn := node.(dagpb.PBNode)
 	links := &pbn.Links
 	if links.Length() != 3 {
@@ -184,15 +212,30 @@ func TestDirectoryTree(t *testing.T) {
 			t.Errorf("link %d = %q, want %q", i, n, want[i])
 		}
 	}
+
+	for _, c := range r.Blocks {
+		if c.String() == "" {
+			t.Fatal("empty CID in blocks")
+		}
+	}
+	entries, err := os.ReadDir(blocksDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			t.Errorf("dotfile block written: %s", e.Name())
+		}
+	}
 }
 
 func TestRootOrder(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, "b.txt"), []byte("b"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "a.txt"), []byte("a"), 0o644)
+	mkdirAll(t, contentDir)
+	writeFile(t, filepath.Join(contentDir, "b.txt"), []byte("b"))
+	writeFile(t, filepath.Join(contentDir, "a.txt"), []byte("a"))
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -210,10 +253,10 @@ func TestSharedBlocks(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
+	mkdirAll(t, contentDir)
 	data := []byte("same content")
-	os.WriteFile(filepath.Join(contentDir, "x.txt"), data, 0o644)
-	os.WriteFile(filepath.Join(contentDir, "y.txt"), data, 0o644)
+	writeFile(t, filepath.Join(contentDir, "x.txt"), data)
+	writeFile(t, filepath.Join(contentDir, "y.txt"), data)
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -226,14 +269,11 @@ func TestSharedBlocks(t *testing.T) {
 		t.Errorf("CIDs differ for identical content")
 	}
 	for _, r := range roots {
-		found := false
-		for _, b := range r.Blocks {
-			if b == r.CID {
-				found = true
-			}
+		if len(r.Blocks) != 1 {
+			t.Fatalf("root %s: blocks = %d, want 1", r.Name, len(r.Blocks))
 		}
-		if !found {
-			t.Errorf("root %s blocks missing root CID", r.Name)
+		if r.Blocks[0] != r.CID {
+			t.Errorf("root %s: block[0] != CID", r.Name)
 		}
 	}
 }
@@ -242,7 +282,7 @@ func TestEmptyDir(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(filepath.Join(contentDir, "empty"), 0o755)
+	mkdirAll(t, filepath.Join(contentDir, "empty"))
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -266,9 +306,11 @@ func TestSymlink(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, "hello.txt"), []byte("hi"), 0o644)
-	os.Symlink("hello.txt", filepath.Join(contentDir, "link"))
+	mkdirAll(t, contentDir)
+	writeFile(t, filepath.Join(contentDir, "hello.txt"), []byte("hi"))
+	if err := os.Symlink("hello.txt", filepath.Join(contentDir, "link")); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := Build(contentDir, blocksDir)
 	if err == nil {
@@ -286,9 +328,11 @@ func TestSymlinkInSubdir(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(filepath.Join(contentDir, "sub"), 0o755)
-	os.WriteFile(filepath.Join(contentDir, "sub", "target.txt"), []byte("hi"), 0o644)
-	os.Symlink("target.txt", filepath.Join(contentDir, "sub", "link"))
+	mkdirAll(t, filepath.Join(contentDir, "sub"))
+	writeFile(t, filepath.Join(contentDir, "sub", "target.txt"), []byte("hi"))
+	if err := os.Symlink("target.txt", filepath.Join(contentDir, "sub", "link")); err != nil {
+		t.Fatal(err)
+	}
 
 	_, err := Build(contentDir, blocksDir)
 	if err == nil {
@@ -317,8 +361,8 @@ func TestOnlyDotfiles(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, ".gitkeep"), []byte(""), 0o644)
+	mkdirAll(t, contentDir)
+	writeFile(t, filepath.Join(contentDir, ".gitkeep"), []byte(""))
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -336,10 +380,10 @@ func TestMaxBlocksLimit(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, "a.txt"), []byte("aaa"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "b.txt"), []byte("bbb"), 0o644)
-	os.WriteFile(filepath.Join(contentDir, "c.txt"), []byte("ccc"), 0o644)
+	mkdirAll(t, contentDir)
+	writeFile(t, filepath.Join(contentDir, "a.txt"), []byte("aaa"))
+	writeFile(t, filepath.Join(contentDir, "b.txt"), []byte("bbb"))
+	writeFile(t, filepath.Join(contentDir, "c.txt"), []byte("ccc"))
 
 	orig := maxBlocks
 	maxBlocks = 2
@@ -358,8 +402,8 @@ func TestMaxTotalBytesLimit(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, "a.txt"), []byte("01234567890"), 0o644)
+	mkdirAll(t, contentDir)
+	writeFile(t, filepath.Join(contentDir, "a.txt"), []byte("01234567890"))
 
 	orig := maxTotalBytes
 	maxTotalBytes = 10
@@ -378,10 +422,10 @@ func TestMaxBlocksSharedBlocks(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
+	mkdirAll(t, contentDir)
 	data := []byte("same")
-	os.WriteFile(filepath.Join(contentDir, "x.txt"), data, 0o644)
-	os.WriteFile(filepath.Join(contentDir, "y.txt"), data, 0o644)
+	writeFile(t, filepath.Join(contentDir, "x.txt"), data)
+	writeFile(t, filepath.Join(contentDir, "y.txt"), data)
 
 	orig := maxBlocks
 	maxBlocks = 2
@@ -400,10 +444,10 @@ func TestIdenticalLeaves(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
+	mkdirAll(t, contentDir)
 
 	data := make([]byte, 512*1024)
-	os.WriteFile(filepath.Join(contentDir, "zeros.bin"), data, 0o644)
+	writeFile(t, filepath.Join(contentDir, "zeros.bin"), data)
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
@@ -423,14 +467,34 @@ func TestIdenticalLeaves(t *testing.T) {
 		}
 		seen[b] = true
 	}
+	hasRoot := false
+	hasRaw := false
+	for _, b := range r.Blocks {
+		if b == r.CID {
+			hasRoot = true
+		}
+		if b.Prefix().Codec == cid.Raw {
+			hasRaw = true
+		}
+		blockPath := filepath.Join(blocksDir, b.String())
+		if _, err := os.Stat(blockPath); err != nil {
+			t.Errorf("block file %s missing: %v", b, err)
+		}
+	}
+	if !hasRoot {
+		t.Error("Blocks does not contain root CID")
+	}
+	if !hasRaw {
+		t.Error("Blocks does not contain a raw block")
+	}
 }
 
 func TestEmptyFile(t *testing.T) {
 	tmp := t.TempDir()
 	contentDir := filepath.Join(tmp, "content")
 	blocksDir := filepath.Join(tmp, "blocks")
-	os.MkdirAll(contentDir, 0o755)
-	os.WriteFile(filepath.Join(contentDir, "empty.txt"), []byte(""), 0o644)
+	mkdirAll(t, contentDir)
+	writeFile(t, filepath.Join(contentDir, "empty.txt"), []byte(""))
 
 	roots, err := Build(contentDir, blocksDir)
 	if err != nil {
