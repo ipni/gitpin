@@ -30,7 +30,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: check
+    - name: check
+      id: check
       shell: bash
       env:
         KEY: ${{ inputs.key }}
@@ -53,7 +54,8 @@ runs:
           exit 1
         fi
         echo "base_url=${base_url}" >> "$GITHUB_OUTPUT"
-    - uses: actions/setup-go@v5
+    - name: setup-go
+      uses: actions/setup-go@v5
       with:
         go-version-file: ${{ github.action_path }}/go.mod
         cache-dependency-path: ${{ github.action_path }}/go.sum
@@ -63,7 +65,8 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         cd "$ACTION_PATH" && go build -o "$RUNNER_TEMP/gitpin" ./cmd/gitpin
-    - id: site
+    - name: site
+      id: site
       shell: bash
       env:
         BRANCH: ${{ inputs.branch }}
@@ -83,7 +86,8 @@ runs:
           exit 1
         fi
         echo "dir=${site}" >> "$GITHUB_OUTPUT"
-    - id: publish
+    - name: publish
+      id: publish
       shell: bash
       env:
         GITPIN_KEY: ${{ inputs.key }}
@@ -151,6 +155,6 @@ runs:
           else
             echo "| Name | CID | Links |"
             echo "| --- | --- | --- |"
-            jq -r '.roots[] | "| \(.name) | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) | [ipfs.io](https://ipfs.io/ipfs/\(.cid)) | [dweb.link](https://dweb.link/ipfs/\(.cid)) | [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
+            jq -r '.roots[] | "| \(.name) | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) [ipfs.io](https://ipfs.io/ipfs/\(.cid)) [dweb.link](https://dweb.link/ipfs/\(.cid)) [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
           fi
         } >> "$GITHUB_STEP_SUMMARY"
