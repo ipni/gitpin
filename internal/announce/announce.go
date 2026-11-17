@@ -24,7 +24,11 @@ func WaitServed(ctx context.Context, c *http.Client, baseURL string, want []byte
 	u := strings.TrimRight(baseURL, "/") + "/ipni/v1/ad/head"
 	last := "no response"
 	for {
-		resp, err := c.Get(u)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return fmt.Errorf("%s is not serving the new head yet (last status %s); check that GitHub Pages is on for this repo with source \"Deploy from a branch\" and branch gh-pages, that the repo is public, and that it is named <owner>.github.io: %w", u, last, ctx.Err())
+		}
+		resp, err := c.Do(req)
 		if err == nil {
 			body, rerr := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 			resp.Body.Close()

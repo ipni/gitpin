@@ -141,18 +141,74 @@ func TestWaitServedTimeout(t *testing.T) {
 
 func TestWaitServedCancelled(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		<-r.Context().Done()
 	}))
 	defer srv.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	timer := time.AfterFunc(50*time.Millisecond, cancel)
+	defer timer.Stop()
+	start := time.Now()
 	err := WaitServed(ctx, srv.Client(), srv.URL, []byte("nope"), every)
+	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("want error")
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("WaitServed took %s, want prompt return", elapsed)
+	}
+}
+
+func TestWaitServedCancelledKeepsLastStatus(t *testing.T) {
+	var mu sync.Mutex
+	count := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		count++
+		n := count
+		mu.Unlock()
+		if n == 1 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	err := WaitServed(ctx, srv.Client(), srv.URL, []byte("nope"), every)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err %v", err)
+	}
+	if !strings.Contains(err.Error(), "last status 404") {
+		t.Errorf("err %q lacks last status 404", err)
+	}
+}
+
+func TestWaitServedWrongBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("other bytes"))
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := WaitServed(ctx, srv.Client(), srv.URL, []byte("want"), every)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !strings.Contains(err.Error(), "is not serving the new head yet") {
+		t.Errorf("err %q lacks 'is not serving the new head yet'", err)
+	}
+	if !strings.Contains(err.Error(), "last status 200") {
+		t.Errorf("err %q lacks last status 200", err)
 	}
 }
 
