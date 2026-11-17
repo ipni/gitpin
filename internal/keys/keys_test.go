@@ -2,15 +2,21 @@ package keys
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -192,5 +198,104 @@ func TestFromEnv(t *testing.T) {
 	os.Unsetenv(EnvVar)
 	if _, err = FromEnv(); !errors.Is(err, errEmpty) {
 		t.Fatalf("unset env: err = %v, want %v", err, errEmpty)
+	}
+}
+
+func seedBytes() []byte {
+	seed := make([]byte, 32)
+	for i := range seed {
+		seed[i] = byte(i)
+	}
+	return seed
+}
+
+func TestParseOpenSSH(t *testing.T) {
+	block, err := ssh.MarshalPrivateKey(ed25519.NewKeyFromSeed(seedBytes()), "gitpin")
+	if err != nil {
+		t.Fatalf("MarshalPrivateKey: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(block)
+
+	k, err := Parse(string(pemBytes))
+	if err != nil {
+		t.Fatalf("Parse OpenSSH: %v", err)
+	}
+	assertPeerID(t, k, vectorPeerID)
+
+	k2, err := Parse("  \n" + string(pemBytes) + "\r\n  ")
+	if err != nil {
+		t.Fatalf("Parse OpenSSH padded: %v", err)
+	}
+	assertPeerID(t, k2, vectorPeerID)
+
+	crlf := strings.ReplaceAll(string(pemBytes), "\n", "\r\n")
+	k3, err := Parse(crlf)
+	if err != nil {
+		t.Fatalf("Parse OpenSSH CRLF: %v", err)
+	}
+	assertPeerID(t, k3, vectorPeerID)
+}
+
+func TestParsePKCS8(t *testing.T) {
+	der, err := x509.MarshalPKCS8PrivateKey(ed25519.NewKeyFromSeed(seedBytes()))
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+
+	k, err := Parse(string(pemBytes))
+	if err != nil {
+		t.Fatalf("Parse PKCS8: %v", err)
+	}
+	assertPeerID(t, k, vectorPeerID)
+}
+
+func TestParsePassphrase(t *testing.T) {
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(ed25519.NewKeyFromSeed(seedBytes()), "gitpin", []byte("pw"))
+	if err != nil {
+		t.Fatalf("MarshalPrivateKeyWithPassphrase: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(block)
+
+	k, err := Parse(string(pemBytes))
+	if err == nil {
+		t.Fatal("expected error for passphrase-protected key")
+	}
+	if k != nil {
+		t.Fatal("key is not nil on error")
+	}
+	if !strings.Contains(err.Error(), "passphrase") {
+		t.Fatalf("err = %v, want it to mention passphrase", err)
+	}
+}
+
+func TestParseNotEd25519(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	block, err := ssh.MarshalPrivateKey(key, "gitpin")
+	if err != nil {
+		t.Fatalf("MarshalPrivateKey: %v", err)
+	}
+	pemBytes := pem.EncodeToMemory(block)
+
+	k, err := Parse(string(pemBytes))
+	if !errors.Is(err, errBadKey) {
+		t.Fatalf("err = %v, want %v", err, errBadKey)
+	}
+	if k != nil {
+		t.Fatal("key is not nil on error")
+	}
+}
+
+func TestParseGarbagePEM(t *testing.T) {
+	in := "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n"
+	k, err := Parse(in)
+	if !errors.Is(err, errBadKey) {
+		t.Fatalf("err = %v, want %v", err, errBadKey)
+	}
+	if k != nil {
+		t.Fatal("key is not nil on error")
 	}
 }

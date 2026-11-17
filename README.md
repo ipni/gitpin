@@ -91,11 +91,19 @@ You can also add the CID to any IPFS pinning service.
 
 ## Get started
 
-You need a GitHub account. Nothing to install.
+You need a GitHub account and a terminal with `ssh-keygen` (built into macOS, Linux and Windows 10 or newer).
 
 1. **Create the repo.** On [github.com/ipni/gitpin-template](https://github.com/ipni/gitpin-template) click **Use this template** > **Create a new repository**. Name it exactly `<your-username>.github.io` and make it **Public** (free accounts need a public repo for Pages).
-2. **Make a key.** Open the [keygen page](https://ipni.github.io/gitpin/keygen/), click **Make a key**, and copy it. It is made in your browser and never sent anywhere.
-3. **Add the secret.** In the new repo: **Settings** > **Secrets and variables** > **Actions** > **New repository secret**. Name it `GITPIN_KEY`, paste the key, click **Add secret**.
+2. **Make a key.** Run:
+
+   ```sh
+   ssh-keygen -t ed25519 -N '' -C gitpin -f gitpin-key
+   ```
+
+   This writes `gitpin-key` (the private key) and `gitpin-key.pub` in the current folder. Make a new key just for gitpin: never use your own SSH login key, because the secret can be read by any workflow in the repo.
+3. **Add the secret.** Either run `gh secret set GITPIN_KEY --repo <your-username>/<your-username>.github.io < gitpin-key` with the GitHub CLI, or open **Settings** > **Secrets and variables** > **Actions** > **New repository secret**, name it `GITPIN_KEY`, paste the whole contents of `gitpin-key` including the BEGIN and END lines, and click **Add secret**. Then delete both files (`rm gitpin-key gitpin-key.pub`; the secret is the only copy you need, and a lost key is replaced as described under the key-change troubleshooting entry).
+
+   In Windows PowerShell, write the empty passphrase as `-N '""'`, add the secret by pasting it in Settings (PowerShell has no `<` redirect), and delete the files with `del gitpin-key, gitpin-key.pub`.
 4. **Run the workflow once.** **Actions** tab > **gitpin** workflow > **Run workflow**. This run creates the `gh-pages` branch, then waits up to 10 minutes for Pages and fails, because Pages is not serving that branch yet. That is expected.
 5. **Point Pages at `gh-pages`.** **Settings** > **Pages** > **Build and deployment**: Source **Deploy from a branch**, Branch `gh-pages`, folder `/ (root)`, **Save**. GitHub usually has Pages on already for a repo named `<your-username>.github.io`, serving `main`. You only change the branch.
 6. **Re-run the workflow.** When it is green, the run summary lists each pin with its CID and links.
@@ -248,6 +256,8 @@ gitpin announce --site site --base-url https://you.example [--indexer URL]
 gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 ```
 
+`gitpin keygen` prints a `GITPIN_KEY=...` line; the part after the `=` is also a valid value for the secret.
+
 `publish` prints one JSON line: `{"changed":true,"head":"...","peer_id":"...","roots":[{"name":"hello.txt","cid":"..."}]}`.
 
 | Exit code | Meaning |
@@ -272,7 +282,7 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 | **Files only** | Names starting with `.` are skipped. Symlinks fail the run with `unsupported file type: <path>`. |
 | **The content folder** | Deleting it, or naming the `content` input wrong, unpublishes everything: the next run removes every pin. |
 | **Indexing takes time** | A new pin usually shows up on cid.contact within minutes, sometimes up to an hour. Until then clients may not find it. |
-| **Your key** | It signs your advertisements. Keep it only in the `GITPIN_KEY` secret. |
+| **Your key** | It signs your advertisements. Keep it only in the `GITPIN_KEY` secret. Make one with the `ssh-keygen` command in step 2 of [Get started](#get-started). |
 
 ---
 
@@ -309,7 +319,21 @@ Rename the repo, or [use a custom domain](#use-a-custom-domain).
 <details>
 <summary>"GITPIN_KEY belongs to ... but gitpin.json was written by ..."</summary>
 
-The key changed since the last run. If that was on purpose (for example after a leak), delete `gitpin.json` and the `ipni/` folder from the `gh-pages` branch, then re-run. `ipfs/` can stay. The new key has a new peer ID; records under the old one expire on cid.contact over time.
+The key changed since the last run. If that was on purpose (for example after a leak), make a new key with the command in step 2 of [Get started](#get-started), replace the secret, then delete `gitpin.json` and the `ipni/` folder from the `gh-pages` branch, and re-run. `ipfs/` can stay. The new key has a new peer ID; records under the old one expire on cid.contact over time.
+
+</details>
+
+<details>
+<summary>"GITPIN_KEY is not an Ed25519 key"</summary>
+
+The secret holds something else, often the `gitpin-key.pub` file or a cut-off paste. Paste the whole private key file again, or make a new key with the command in step 2 of [Get started](#get-started).
+
+</details>
+
+<details>
+<summary>"GITPIN_KEY has a passphrase"</summary>
+
+Your key was made with a passphrase. Make a new key with `-N ''` (the command in step 2 of [Get started](#get-started)) and replace the secret.
 
 </details>
 
@@ -324,11 +348,10 @@ Your files are published. Wait a few minutes and re-run the workflow, or just ch
 
 ## Contributing
 
-The repo holds the Go program (`cmd/gitpin`, `internal/`), the composite action (`action.yml`), the template repo's files (`template/`) and the key page (`keygen/`).
+The repo holds the Go program (`cmd/gitpin`, `internal/`), the composite action (`action.yml`) and the template repo's files (`template/`).
 
 ```sh
 go test ./...                              # Go packages
-node --test keygen/keygen.test.mjs         # key page (Node 24)
 ```
 
 Issues and pull requests are welcome at [github.com/ipni/gitpin](https://github.com/ipni/gitpin).
