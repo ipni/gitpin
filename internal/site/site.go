@@ -56,25 +56,29 @@ func BaseAddr(baseURL string) (multiaddr.Multiaddr, error) {
 	if u.Path != "" && u.Path != "/" {
 		return nil, fmt.Errorf("base URL must be a site root like https://alice.github.io, not %s (project pages under a path are not supported)", baseURL)
 	}
-	port := u.Port()
+	p, err := portFor(u, u.Scheme)
+	if err != nil {
+		return nil, httpsErr
+	}
 	if u.Scheme == "https" {
-		if port == "" {
-			port = "443"
-		}
-		p, err := strconv.Atoi(port)
-		if err != nil || p < 1 || p > 65535 {
-			return nil, httpsErr
-		}
 		return multiaddr.NewMultiaddr(fmt.Sprintf("/dns/%s/tcp/%d/https", strings.ToLower(host), p))
 	}
+	return multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/http", p))
+}
+
+func portFor(u *url.URL, scheme string) (int, error) {
+	port := u.Port()
+	if scheme == "https" && port == "" {
+		port = "443"
+	}
 	if port == "" {
-		return nil, httpsErr
+		return 0, fmt.Errorf("missing port")
 	}
 	p, err := strconv.Atoi(port)
 	if err != nil || p < 1 || p > 65535 {
-		return nil, httpsErr
+		return 0, fmt.Errorf("bad port %q", port)
 	}
-	return multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/127.0.0.1/tcp/%d/http", p))
+	return p, nil
 }
 
 // Assemble writes the static site files for the given state and roots.
