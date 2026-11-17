@@ -36,7 +36,7 @@ The GitHub Action builds your files into UnixFS blocks (CIDv1, 256 KiB chunks) a
 
 ## Action reference
 
-The workflow uses `actions/checkout@v4` with its default credentials, then the action. Keep `persist-credentials: false` off: it breaks the push to `gh-pages`.
+The workflow uses `actions/checkout@v4` with its default credentials, then the action. Do not set `persist-credentials: false` on `actions/checkout`; it breaks the push to `gh-pages`.
 
 The template workflow, `template/.github/workflows/gitpin.yml`:
 
@@ -59,19 +59,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ipni/gitpin@v1
         with:
-          key: }
+          key: ${{ secrets.GITPIN_KEY }}
 ```
 
 Inputs:
 
 | input | default | description |
 | --- | --- | --- |
-| `key` | required, no default | the key that signs the advertisements |
+| `key` | required, no default | the key that signs the advertisements; `${{ secrets.GITPIN_KEY }}` |
 | `content` | `pins` | a path relative to the repo root whose top-level files and folders are the pins |
 | `branch` | `gh-pages` | the branch the site is pushed to |
 | `base-url` | `https://<owner>.github.io` | where the site is served from; set to `https://your.domain` for a custom domain |
 | `indexer` | `https://cid.contact` | the IPNI indexer to announce to |
-| `wait-indexed` | `true` | wait for the indexer to list the new head before the run finishes |
+| `wait-indexed` | `true` | wait until cid.contact lists every pin's CID with this site as a provider before the run finishes; on timeout the run ends with a warning, not a failure |
 
 Outputs:
 
