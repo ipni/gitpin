@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -133,13 +134,13 @@ func runPublish(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if len(roots) == 0 && len(prev.Roots) == 0 {
+	if len(roots) == 0 && prev.Head == "" {
 		return failf(stderr, "no files in %s: add a file to it and push again", *contentDir)
 	}
 	next, changed, err := ipni.Publish(ipni.Params{
 		Key:     key,
 		Addr:    addr,
-		BaseURL: *baseURL,
+		BaseURL: normalizeBaseURL(*baseURL),
 		AdDir:   filepath.Join(*siteDir, "ipni", "v1", "ad"),
 	}, prev, roots)
 	if err != nil {
@@ -199,17 +200,6 @@ func runAnnounce(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	if st.Head == "" {
 		return failf(stderr, "nothing to announce: run publish first")
 	}
-	if *waitServed > 0 {
-		want, err := os.ReadFile(filepath.Join(*siteDir, "ipni", "v1", "ad", "head"))
-		if err != nil {
-			return fail(stderr, err)
-		}
-		wctx, cancel := context.WithTimeout(ctx, *waitServed)
-		defer cancel()
-		if err := announce.WaitServed(wctx, http.DefaultClient, *baseURL, want, *every); err != nil {
-			return fail(stderr, err)
-		}
-	}
 	id, err := peer.Decode(st.PeerID)
 	if err != nil {
 		return fail(stderr, err)
@@ -221,6 +211,18 @@ func runAnnounce(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	addr, err := site.BaseAddr(*baseURL)
 	if err != nil {
 		return fail(stderr, err)
+	}
+	base := normalizeBaseURL(*baseURL)
+	if *waitServed > 0 {
+		want, err := os.ReadFile(filepath.Join(*siteDir, "ipni", "v1", "ad", "head"))
+		if err != nil {
+			return fail(stderr, err)
+		}
+		wctx, cancel := context.WithTimeout(ctx, *waitServed)
+		defer cancel()
+		if err := announce.WaitServed(wctx, http.DefaultClient, base, want, *every); err != nil {
+			return fail(stderr, err)
+		}
 	}
 	if err := announce.Send(ctx, *indexerURL, id, head, addr); err != nil {
 		return fail(stderr, err)
@@ -276,6 +278,12 @@ func runWaitIndexed(ctx context.Context, args []string, stdout, stderr io.Writer
 		fmt.Fprintf(stdout, "indexed %s %s\n", r.Name, r.CID)
 	}
 	return exitOK
+}
+
+// normalizeBaseURL strips one trailing slash from a base URL that site.BaseAddr
+// has already accepted, so https://x and https://x/ name the same site.
+func normalizeBaseURL(baseURL string) string {
+	return strings.TrimSuffix(baseURL, "/")
 }
 
 // fail prints a gitpin-prefixed error to stderr and returns the error exit code.

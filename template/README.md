@@ -53,9 +53,9 @@ Delete the file or folder from `pins/` and commit. The blocks are removed from t
 
 ## If something goes wrong
 
-- **"Pages is not serving the new head"**: Pages is off, the source is not set to the `gh-pages` branch, the repo is private, or the repo name is not `<owner>.github.io`.
+- **"... is not serving the new head yet"**: Pages is off, the source is not set to the `gh-pages` branch, the repo is private, the repo is not named `<owner>.github.io` and no `base-url` is set, or a custom domain is not pointing at Pages yet.
 - **"The GITPIN_KEY secret is not set"**: add the secret under Settings > Secrets and variables > Actions.
 - **"GITPIN_KEY belongs to ... but gitpin.json was written by ..."**: the key changed; see the key bullet above.
 - **"needs a repo named `<owner>.github.io`"**: rename the repo, or use a custom domain (see the [main README](https://github.com/ipni/gitpin#readme)).
-- **A yellow "not indexed yet" warning**: wait a few minutes and re-run the workflow.
+- **A yellow "cid.contact has not indexed every pin yet" warning**: wait a few minutes and re-run the workflow.
 - **The push to `gh-pages` fails**: the workflow's `actions/checkout` must keep its default credentials; `persist-credentials: false` breaks the push that the `ipni/gitpin@v1` action makes.

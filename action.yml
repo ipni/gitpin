@@ -95,6 +95,12 @@ runs:
         BASE_URL: ${{ steps.check.outputs.base_url }}
         SITE: ${{ steps.site.outputs.dir }}
       run: |
+        if [ ! -d "$GITHUB_WORKSPACE/$CONTENT" ]; then
+          roots=$(jq '.roots | length' "$SITE/gitpin.json" 2> /dev/null || echo 0)
+          if [ "${roots:-0}" -gt 0 ]; then
+            echo "::warning::The $CONTENT folder does not exist, so every published file will be removed. Check the content input if that is not what you want."
+          fi
+        fi
         "$RUNNER_TEMP/gitpin" publish --content "$GITHUB_WORKSPACE/$CONTENT" --site "$SITE" --base-url "$BASE_URL" > "$RUNNER_TEMP/publish.json"
         head=$(jq -r '.head' "$RUNNER_TEMP/publish.json")
         peer_id=$(jq -r '.peer_id' "$RUNNER_TEMP/publish.json")
@@ -155,6 +161,6 @@ runs:
           else
             echo "| Name | CID | Links |"
             echo "| --- | --- | --- |"
-            jq -r '.roots[] | "| \(.name) | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) [ipfs.io](https://ipfs.io/ipfs/\(.cid)) [dweb.link](https://dweb.link/ipfs/\(.cid)) [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
+            jq -r '.roots[] | "| \(.name | gsub("(?<c>[|\\[\\]])"; "\\\(.c)")) | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) [ipfs.io](https://ipfs.io/ipfs/\(.cid)) [dweb.link](https://dweb.link/ipfs/\(.cid)) [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
           fi
         } >> "$GITHUB_STEP_SUMMARY"

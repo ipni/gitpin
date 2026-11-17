@@ -193,9 +193,10 @@ Outputs: `head` (CID of the newest advertisement) and `peer-id` (the peer ID of 
 With a custom domain the repo can have any name, and an account that already uses `<your-username>.github.io` for something else can still use gitpin. The site must be at the domain root, not under a path.
 
 1. Point the domain at GitHub Pages (see GitHub's custom domain docs). It must serve HTTPS.
-2. Run the workflow once. It fails after its wait; this run creates `gh-pages`.
-3. In **Settings** > **Pages**, set the source to branch `gh-pages`, folder `/ (root)`, and enter the domain. GitHub writes a `CNAME` file to `gh-pages`, which gitpin keeps.
-4. Add `base-url: https://your.domain` under `with:` in the workflow and run it again.
+2. Add `base-url: https://your.domain` under `with:` in the workflow.
+3. Run the workflow once. It creates the `gh-pages` branch, then fails after its wait, because Pages is not serving that branch yet.
+4. In **Settings** > **Pages**, set the source to branch `gh-pages`, folder `/ (root)`, and enter the domain. GitHub writes a `CNAME` file to `gh-pages`, which gitpin keeps.
+5. Run the workflow again.
 
 ## Command line
 
@@ -219,16 +220,17 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 - **Size.** At most 500 MiB and 50,000 blocks of content per repo. GitHub Pages limits a site to 1 GB and about 100 GB of traffic a month, and its terms are for websites, not bulk file hosting.
 - **Root sites only.** Project sites (`<username>.github.io/<repo>`) are not supported: IPFS clients need the site at a domain root.
 - **Files only.** Names starting with `.` are skipped. Symlinks fail the run with `unsupported file type: <path>`.
+- **The content folder.** Deleting it, or naming the `content` input wrong, unpublishes everything: the next run removes every pin.
 - **Indexing takes time.** A new pin usually shows up on cid.contact within minutes, sometimes up to an hour. Until then clients may not find it.
 - **Your key.** It signs your advertisements. Keep it only in the `GITPIN_KEY` secret.
 
 ## Troubleshooting
 
-- **"... is not serving the new head yet"**: Pages is off, its source is not the `gh-pages` branch, the repo is private, or the repo is not named `<owner>.github.io`. Fix the setting and re-run the workflow.
+- **"... is not serving the new head yet"**: Pages is off, its source is not the `gh-pages` branch, the repo is private, the repo is not named `<owner>.github.io` and no `base-url` is set, or a custom domain is not pointing at Pages yet. Fix the setting and re-run the workflow.
 - **"The GITPIN_KEY secret is not set"**: add the secret (step 3 of [Get started](#get-started)).
 - **"needs a repo named `<owner>.github.io`"**: rename the repo, or [use a custom domain](#use-a-custom-domain).
 - **"GITPIN_KEY belongs to ... but gitpin.json was written by ..."**: the key changed since the last run. If that was on purpose (for example after a leak), delete `gitpin.json` and the `ipni/` folder from the `gh-pages` branch, then re-run; `ipfs/` can stay. The new key has a new peer ID; records under the old one expire on cid.contact over time.
-- **Yellow "not indexed yet" warning**: your files are published. Wait a few minutes and re-run the workflow, or just check the index link later.
+- **Yellow "cid.contact has not indexed every pin yet" warning**: your files are published. Wait a few minutes and re-run the workflow, or just check the index link later.
 
 ## Contributing
 

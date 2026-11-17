@@ -406,6 +406,7 @@ func TestEndToEnd(t *testing.T) {
 		step1AdFiles []string
 		updateRoots  = map[string]cid.Cid{}
 		adFileCount  int
+		unpinHead    string
 
 		s2Head     string
 		s2Roots    = map[string]cid.Cid{}
@@ -737,6 +738,7 @@ func TestEndToEnd(t *testing.T) {
 			t.Fatalf("publish exit %d, stderr: %s", code, stderr)
 		}
 		s := decodeSummary(t, stdout)
+		unpinHead = s.Head
 		if !s.Changed {
 			t.Errorf("changed = false, want true")
 		}
@@ -788,6 +790,44 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("ad file count %d < previous %d", n, adFileCount)
 		}
 		adFileCount = n
+	})
+
+	t.Run("re-run after unpinning everything", func(t *testing.T) {
+		code, stdout, stderr := runCLI(t, "publish", "--content", contentDir, "--site", siteDir, "--base-url", baseURL)
+		if code != 0 {
+			t.Fatalf("publish exit %d, stderr: %s", code, stderr)
+		}
+		s := decodeSummary(t, stdout)
+		if s.Changed {
+			t.Errorf("changed = true, want false")
+		}
+		if !strings.Contains(stdout, `"changed":false`) {
+			t.Errorf("stdout = %s, want it to contain %q", stdout, `"changed":false`)
+		}
+		if s.Head != unpinHead {
+			t.Errorf("head = %s, want unchanged %s", s.Head, unpinHead)
+		}
+		if len(s.Roots) != 0 {
+			t.Errorf("roots = %d, want 0 (%+v)", len(s.Roots), s.Roots)
+		}
+
+		fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPut && r.URL.Path == "/announce" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		t.Cleanup(fake.Close)
+
+		code, stdout, stderr = runCLI(t, "announce", "--site", siteDir, "--base-url", baseURL,
+			"--indexer", fake.URL, "--wait-served", "5s", "--every", "50ms")
+		if code != 0 {
+			t.Fatalf("announce exit %d, want 0 (stderr: %s)", code, stderr)
+		}
+		if !strings.Contains(stdout, "announced") {
+			t.Errorf("announce stdout = %q, want it to mention announced", stdout)
+		}
 	})
 
 	t.Run("first run with nothing", func(t *testing.T) {
