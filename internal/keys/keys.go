@@ -1,4 +1,6 @@
-// Package keys handles the gitpin signing key.
+// Package keys handles the gitpin signing key. A key is stored either as the
+// base64 output of gitpin keygen or as a PEM private key written by ssh-keygen
+// (or openssl), both Ed25519.
 package keys
 
 import (
@@ -11,11 +13,13 @@ import (
 	"strings"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"golang.org/x/crypto/ssh"
 )
 
 var (
-	errEmpty  = errors.New("GITPIN_KEY is empty")
-	errBadKey = errors.New("GITPIN_KEY is not an Ed25519 libp2p private key")
+	errEmpty      = errors.New("GITPIN_KEY is empty")
+	errBadKey     = errors.New("GITPIN_KEY is not an Ed25519 key (expected an ssh-keygen -t ed25519 private key or gitpin keygen output)")
+	errPassphrase = errors.New("GITPIN_KEY has a passphrase; make a new key without one (ssh-keygen -N '')")
 )
 
 // EnvVar is the environment variable holding the base64-encoded signing key.
@@ -34,11 +38,15 @@ func Generate() (crypto.PrivKey, string, error) {
 	return priv, base64.StdEncoding.EncodeToString(raw), nil
 }
 
-// Parse decodes a base64-encoded signing key.
+// Parse decodes a signing key given either as the base64 output of gitpin
+// keygen or as a PEM private key from ssh-keygen (or openssl).
 func Parse(s string) (crypto.PrivKey, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, errEmpty
+	}
+	if strings.HasPrefix(s, "-----BEGIN") {
+		return parsePEM(s)
 	}
 	raw, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
@@ -50,6 +58,32 @@ func Parse(s string) (crypto.PrivKey, error) {
 	}
 	buf, err := k.Raw()
 	if err != nil || len(buf) != 64 || !bytes.Equal(buf[32:], ed25519.NewKeyFromSeed(buf[:32]).Public().(ed25519.PublicKey)) {
+		return nil, errBadKey
+	}
+	return k, nil
+}
+
+// parsePEM decodes a PEM private key (OpenSSH or PKCS#8) into a libp2p Ed25519 key.
+func parsePEM(s string) (crypto.PrivKey, error) {
+	raw, err := ssh.ParseRawPrivateKey([]byte(s))
+	if err != nil {
+		var pme *ssh.PassphraseMissingError
+		if errors.As(err, &pme) {
+			return nil, errPassphrase
+		}
+		return nil, errBadKey
+	}
+	var edKey ed25519.PrivateKey
+	switch k := raw.(type) {
+	case *ed25519.PrivateKey:
+		edKey = *k
+	case ed25519.PrivateKey:
+		edKey = k
+	default:
+		return nil, errBadKey
+	}
+	k, err := crypto.UnmarshalEd25519PrivateKey([]byte(edKey))
+	if err != nil {
 		return nil, errBadKey
 	}
 	return k, nil
