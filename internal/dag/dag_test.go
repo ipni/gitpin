@@ -2,7 +2,6 @@ package dag
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/ipfs/go-cid"
 	dagpb "github.com/ipld/go-codec-dagpb"
-	"github.com/ipld/go-ipld-prime/node/basicnode"
 	"github.com/multiformats/go-multihash"
 )
 
@@ -54,8 +52,7 @@ func TestSingleFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := sha256.Sum256(data)
-	expectedMH, _ := multihash.Sum(h[:], multihash.SHA2_256, -1)
+	expectedMH, _ := multihash.Sum(data, multihash.SHA2_256, -1)
 	if !bytes.Equal(expectedMH, r.CID.Hash()) {
 		t.Errorf("block hash mismatch")
 	}
@@ -129,8 +126,7 @@ func TestLargeFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("block %s: %v", c, err)
 		}
-		h := sha256.Sum256(blockData)
-		expectedMH, _ := multihash.Sum(h[:], multihash.SHA2_256, -1)
+		expectedMH, _ := multihash.Sum(blockData, multihash.SHA2_256, -1)
 		if !bytes.Equal(expectedMH, c.Hash()) {
 			t.Errorf("block %s hash mismatch", c)
 		}
@@ -173,14 +169,14 @@ func TestDirectoryTree(t *testing.T) {
 	}
 	node := builder.Build()
 	pbn := node.(dagpb.PBNode)
-	links := pbn.Links().Mutable().(*dagpb.PBLink__List)
+	links := &pbn.Links
 	if links.Length() != 3 {
 		t.Fatalf("links = %d, want 3", links.Length())
 	}
 	var names []string
 	for i := int64(0); i < links.Length(); i++ {
-		link := links.LookupByIndex(i).(dagpb.PBLink)
-		names = append(names, link.Name().Must().String())
+		link := links.Lookup(i)
+		names = append(names, link.FieldName().Must().String())
 	}
 	want := []string{"a.txt", "b.txt", "sub"}
 	for i, n := range names {
@@ -451,5 +447,3 @@ func TestEmptyFile(t *testing.T) {
 		t.Fatalf("blocks = %d, want 1", len(r.Blocks))
 	}
 }
-
-
