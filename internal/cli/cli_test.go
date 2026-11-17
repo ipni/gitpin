@@ -3,9 +3,37 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ipni/gitpin/internal/keys"
 )
+
+// genKey makes a fresh signing key available through the environment.
+func genKey(t *testing.T) {
+	t.Helper()
+	_, b64, err := keys.Generate()
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	t.Setenv("GITPIN_KEY", b64)
+}
+
+// decodeHead reads the head and changed fields out of a publish summary line.
+func decodeHead(t *testing.T, stdout string) (bool, string) {
+	t.Helper()
+	var s struct {
+		Changed bool   `json:"changed"`
+		Head    string `json:"head"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &s); err != nil {
+		t.Fatalf("decode publish summary %q: %v", stdout, err)
+	}
+	return s.Changed, s.Head
+}
 
 func run(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
@@ -83,6 +111,96 @@ func TestAnnounceNothingToAnnounce(t *testing.T) {
 	}
 	if !strings.Contains(errb, "nothing to announce") {
 		t.Errorf("stderr = %q, want it to contain \"nothing to announce\"", errb)
+	}
+}
+
+func TestPublishRerunAfterUnpinAll(t *testing.T) {
+	genKey(t)
+	content := t.TempDir()
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(content, "a.txt"), []byte("one file\n"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	base := "https://a.github.io"
+	if code, _, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", base); code != 0 {
+		t.Fatalf("first publish exit %d, stderr: %s", code, errb)
+	}
+	if err := os.Remove(filepath.Join(content, "a.txt")); err != nil {
+		t.Fatalf("remove a.txt: %v", err)
+	}
+	code, stdout, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", base)
+	if code != 0 {
+		t.Fatalf("unpin-all publish exit %d, stderr: %s", code, errb)
+	}
+	_, head := decodeHead(t, stdout)
+	if head == "" {
+		t.Fatalf("head is empty after the unpin-all run")
+	}
+	code, stdout, errb = run(t, "publish", "--content", content, "--site", siteDir, "--base-url", base)
+	if code != 0 {
+		t.Fatalf("re-run after unpinning everything exit %d, stderr: %s", code, errb)
+	}
+	changed, again := decodeHead(t, stdout)
+	if changed {
+		t.Errorf("changed = true, want false")
+	}
+	if again != head {
+		t.Errorf("head = %s, want unchanged %s", again, head)
+	}
+}
+
+func TestPublishBaseURLTrailingSlash(t *testing.T) {
+	genKey(t)
+	content := t.TempDir()
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(content, "a.txt"), []byte("one file\n"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	if code, _, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", "https://a.github.io"); code != 0 {
+		t.Fatalf("first publish exit %d, stderr: %s", code, errb)
+	}
+	code, stdout, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", "https://a.github.io/")
+	if code != 0 {
+		t.Fatalf("publish with a trailing slash exit %d, stderr: %s", code, errb)
+	}
+	changed, _ := decodeHead(t, stdout)
+	if changed {
+		t.Errorf("changed = true, want false: a trailing slash must not name a different site")
+	}
+}
+
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := [][2]string{
+		{"https://Alice.github.io", "https://alice.github.io"},
+		{"https://alice.github.io", "https://alice.github.io"},
+		{"https://Alice.github.io/", "https://alice.github.io"},
+		{"https://ALICE.GitHub.IO", "https://alice.github.io"},
+		{"https://x.github.io:443", "https://x.github.io"},
+	}
+	for _, c := range cases {
+		if got := normalizeBaseURL(c[0]); got != c[1] {
+			t.Errorf("normalizeBaseURL(%q) = %q, want %q", c[0], got, c[1])
+		}
+	}
+}
+
+func TestPublishBaseURLCase(t *testing.T) {
+	genKey(t)
+	content := t.TempDir()
+	siteDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(content, "a.txt"), []byte("one file\n"), 0o644); err != nil {
+		t.Fatalf("write a.txt: %v", err)
+	}
+	if code, _, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", "https://Alice.github.io"); code != 0 {
+		t.Fatalf("first publish exit %d, stderr: %s", code, errb)
+	}
+	code, stdout, errb := run(t, "publish", "--content", content, "--site", siteDir, "--base-url", "https://alice.github.io")
+	if code != 0 {
+		t.Fatalf("publish with a lowercase host exit %d, stderr: %s", code, errb)
+	}
+	changed, _ := decodeHead(t, stdout)
+	if changed {
+		t.Errorf("changed = true, want false: host case must not name a different site")
 	}
 }
 

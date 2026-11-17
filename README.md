@@ -102,7 +102,7 @@ You need a GitHub account. Nothing to install.
 5. **Point Pages at `gh-pages`.** **Settings** > **Pages** > **Build and deployment**: Source **Deploy from a branch**, Branch `gh-pages`, folder `/ (root)`, **Save**. GitHub usually has Pages on already for a repo named `<your-username>.github.io`, serving `main`. You only change the branch.
 6. **Re-run the workflow.** When it is green, the run summary lists each pin with its CID and links.
 
-The [template README](https://github.com/ipni/gitpin-template#readme) walks through the same steps for people new to GitHub Actions. Already have a `<your-username>.github.io` repo? See [Use a custom domain](#use-a-custom-domain).
+The [template README](https://github.com/ipni/gitpin-template#readme) walks through the same steps for people new to GitHub Actions. Already have a `<your-username>.github.io` repo? If you already use it for a website, adding gitpin to it would replace that website, so [use a custom domain](#use-a-custom-domain) or create the repo under a GitHub organization you own.
 
 ---
 
@@ -202,6 +202,8 @@ jobs:
 
 **Keep the default credentials.** Leave `actions/checkout` as it is: `persist-credentials: false` breaks the push to `gh-pages`.
 
+**Keep the `concurrency` group.** It is required, not optional: two overlapping runs each force-push their own snapshot of `gh-pages`, and the losing run's published files are silently dropped.
+
 **Inputs of `ipni/gitpin@v1`:**
 
 | Input | Default | Description |
@@ -221,10 +223,12 @@ jobs:
 
 With a custom domain the repo can have any name, and an account that already uses `<your-username>.github.io` for something else can still use gitpin. The site must be at the domain root, not under a path.
 
-1. Point the domain at GitHub Pages (see GitHub's custom domain docs). It must serve HTTPS.
-2. Run the workflow once. It fails after its wait; this run creates `gh-pages`.
-3. In **Settings** > **Pages**, set the source to branch `gh-pages`, folder `/ (root)`, and enter the domain. GitHub writes a `CNAME` file to `gh-pages`, which gitpin keeps.
-4. Add `base-url: https://your.domain` under `with:` in the workflow and run it again.
+1. **Point the domain at GitHub Pages** with DNS (see GitHub's custom domain docs).
+2. **Set the base URL.** Add `base-url: https://your.domain` under `with:` in the workflow.
+3. **Run the workflow once.** It creates the `gh-pages` branch, then fails after its wait, because Pages is not serving that branch yet.
+4. **Set up Pages.** In **Settings** > **Pages**, set the source to branch `gh-pages`, folder `/ (root)`, and enter the domain. GitHub writes a `CNAME` file to `gh-pages`, which gitpin keeps.
+5. **Wait for HTTPS.** GitHub issues the certificate only after you enter the domain, which can take a while. Wait until `https://your.domain` loads with a valid certificate (the **Enforce HTTPS** box becomes available). Until then the run fails with "is not serving the new head yet (last status no response)".
+6. **Run the workflow again.**
 
 ---
 
@@ -268,6 +272,7 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 | **Size** | At most 500 MiB and 50,000 blocks of content per repo. GitHub Pages limits a site to 1 GB and about 100 GB of traffic a month, and its terms are for websites, not bulk file hosting. |
 | **Root sites only** | Project sites (`<username>.github.io/<repo>`) are not supported: IPFS clients need the site at a domain root. |
 | **Files only** | Names starting with `.` are skipped. Symlinks fail the run with `unsupported file type: <path>`. |
+| **The content folder** | Deleting it, or naming the `content` input wrong, unpublishes everything: the next run removes every pin. |
 | **Indexing takes time** | A new pin usually shows up on cid.contact within minutes, sometimes up to an hour. Until then clients may not find it. |
 | **Your key** | It signs your advertisements. Keep it only in the `GITPIN_KEY` secret. |
 
@@ -278,7 +283,14 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 <details>
 <summary>"... is not serving the new head yet"</summary>
 
-Pages is off, its source is not the `gh-pages` branch, the repo is private, or the repo is not named `<owner>.github.io`. Fix the setting and re-run the workflow.
+Pages is off, its source is not the `gh-pages` branch, the repo is private, the repo is not named `<owner>.github.io` and no `base-url` is set, or a custom domain is not pointing at Pages yet. Fix the setting and re-run the workflow.
+
+</details>
+
+<details>
+<summary>"... redirects to ..."</summary>
+
+The site redirects, usually because a custom domain is set while `base-url` is still the default `https://<owner>.github.io`, or the domain was given as the apex while Pages serves `www` (or the other way round). Set `base-url` to the exact origin that serves the site.
 
 </details>
 
@@ -304,7 +316,7 @@ The key changed since the last run. If that was on purpose (for example after a 
 </details>
 
 <details>
-<summary>Yellow "not indexed yet" warning</summary>
+<summary>Yellow "cid.contact has not indexed every pin yet" warning</summary>
 
 Your files are published. Wait a few minutes and re-run the workflow, or just check the index link later.
 

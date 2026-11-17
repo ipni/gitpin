@@ -771,3 +771,16 @@ func TestBadPrevHead(t *testing.T) {
 		t.Errorf("err = %v, want it to mention the bad head", err)
 	}
 }
+
+func TestNoTempFilesAfterPublish(t *testing.T) {
+	p := testParams(t)
+	roots := []dag.Root{mkRoot("a.txt", "a", 3), mkRoot("b.txt", "b", 2)}
+	if _, _, err := Publish(p, state.State{Version: 1, Roots: []state.Root{}}, roots); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	for _, name := range fileList(p.AdDir) {
+		if strings.HasPrefix(name, "tmp-") {
+			t.Errorf("leftover temp file in ad dir: %s", name)
+		}
+	}
+}
