@@ -161,6 +161,6 @@ runs:
           else
             echo "| Name | CID | Links |"
             echo "| --- | --- | --- |"
-            jq -r '.roots[] | "| \(.name | gsub("(?<c>[|\\[\\]])"; "\\\(.c)")) | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) [ipfs.io](https://ipfs.io/ipfs/\(.cid)) [dweb.link](https://dweb.link/ipfs/\(.cid)) [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
+            jq -r '.roots[] | "| `\(.name | gsub("[`]"; "\u0027") | gsub("\\|"; "\\|"))` | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) [ipfs.io](https://ipfs.io/ipfs/\(.cid)) [dweb.link](https://dweb.link/ipfs/\(.cid)) [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
           fi
         } >> "$GITHUB_STEP_SUMMARY"
