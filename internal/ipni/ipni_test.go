@@ -252,6 +252,9 @@ func TestSecondPublishNoChange(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(p.AdDir, "head")); err != nil {
 		t.Errorf("head file: %v", err)
 	}
+	if sh := loadHead(t, p.AdDir); cidOfLink(sh.Head) != mustCid(t, second.Head) {
+		t.Errorf("signed head cid = %s, want %s", cidOfLink(sh.Head), second.Head)
+	}
 	if second.Roots[0].Ad != first.Roots[0].Ad || second.Roots[1].Ad != first.Roots[1].Ad {
 		t.Errorf("ads not carried over: %+v", second.Roots)
 	}
@@ -329,6 +332,9 @@ func TestRemoveAndAdd(t *testing.T) {
 	}
 	if st.Head != st.Roots[1].Ad {
 		t.Errorf("head = %s, want c ad %s", st.Head, st.Roots[1].Ad)
+	}
+	if sh := loadHead(t, p.AdDir); cidOfLink(sh.Head) != mustCid(t, st.Head) {
+		t.Errorf("signed head cid = %s, want %s", cidOfLink(sh.Head), st.Head)
 	}
 
 	addCid, err := cid.Parse(st.Head)
@@ -419,6 +425,9 @@ func TestRemoveEverything(t *testing.T) {
 	}
 	if cidOfLink(ad.PreviousID) != oldHead {
 		t.Errorf("previous = %s, want %s", cidOfLink(ad.PreviousID), oldHead)
+	}
+	if sh := loadHead(t, p.AdDir); cidOfLink(sh.Head) != adCid {
+		t.Errorf("signed head cid = %s, want %s", cidOfLink(sh.Head), adCid)
 	}
 }
 
@@ -514,8 +523,11 @@ func TestReAddMakesNewAd(t *testing.T) {
 	if !bytes.Equal(ad.ContextID, a.CID.Bytes()) {
 		t.Errorf("context id = %x, want %x", ad.ContextID, a.CID.Bytes())
 	}
-	if cidOfLink(ad.PreviousID) == cid.Undef {
-		t.Error("re-add ad has no previous id")
+	if cidOfLink(ad.PreviousID) != mustCid(t, removed.Head) {
+		t.Errorf("re-add previous = %s, want remove ad %s", cidOfLink(ad.PreviousID), removed.Head)
+	}
+	if adCid.String() == firstAd {
+		t.Errorf("re-add ad cid = %s, want it to differ from the first add ad %s", adCid, firstAd)
 	}
 }
 
@@ -649,6 +661,9 @@ func TestBaseURLChange(t *testing.T) {
 	}
 	if cidOfLink(ad.PreviousID) != mustCid(t, prev.Head) {
 		t.Errorf("previous = %s, want %s", cidOfLink(ad.PreviousID), prev.Head)
+	}
+	if sh := loadHead(t, p.AdDir); cidOfLink(sh.Head) != adCid {
+		t.Errorf("signed head cid = %s, want %s", cidOfLink(sh.Head), adCid)
 	}
 	for _, r := range st.Roots {
 		if r.Ad != prev.Roots[0].Ad {

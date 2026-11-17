@@ -72,6 +72,9 @@ func Publish(p Params, prev state.State, roots []dag.Root) (state.State, bool, e
 	}
 	newSet := make(map[string]struct{}, len(roots))
 	for _, r := range roots {
+		if len(r.Blocks) == 0 {
+			return state.State{}, false, fmt.Errorf("root %s has no blocks", r.Name)
+		}
 		newSet[r.CID.String()] = struct{}{}
 	}
 
@@ -86,7 +89,7 @@ func Publish(p Params, prev state.State, roots []dag.Root) (state.State, bool, e
 			if err := os.MkdirAll(p.AdDir, 0o755); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(p.AdDir, cl.Cid.String()), buf.Bytes(), 0o644)
+			return writeFile(filepath.Join(p.AdDir, cl.Cid.String()), buf.Bytes())
 		}, nil
 	}
 	store := func(node ipld.Node) (cid.Cid, error) {
@@ -200,7 +203,7 @@ func Publish(p Params, prev state.State, roots []dag.Root) (state.State, bool, e
 		if err != nil {
 			return state.State{}, false, fmt.Errorf("encode signed head: %w", err)
 		}
-		if err := os.WriteFile(filepath.Join(p.AdDir, "head"), data, 0o644); err != nil {
+		if err := writeFile(filepath.Join(p.AdDir, "head"), data); err != nil {
 			return state.State{}, false, fmt.Errorf("write signed head: %w", err)
 		}
 	}
@@ -223,4 +226,13 @@ func Publish(p Params, prev state.State, roots []dag.Root) (state.State, bool, e
 		st.Roots = append(st.Roots, state.Root{Name: r.Name, CID: cidStr, Ad: ad})
 	}
 	return st, changed, nil
+}
+
+// writeFile writes data to path atomically via a temp file in the same directory.
+func writeFile(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
