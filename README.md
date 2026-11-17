@@ -222,7 +222,6 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 - **Size.** At most 500 MiB and 50,000 blocks of content per repo. GitHub Pages limits a site to 1 GB and about 100 GB of traffic a month, and its terms are for websites, not bulk file hosting.
 - **Root sites only.** Project sites (`<username>.github.io/<repo>`) are not supported: IPFS clients need the site at a domain root.
 - **Files only.** Names starting with `.` are skipped. Symlinks fail the run with `unsupported file type: <path>`.
-- **Folder size.** A single folder can hold at most about 10,000 entries; split bigger ones into subfolders.
 - **The content folder.** Deleting it, or naming the `content` input wrong, unpublishes everything: the next run removes every pin.
 - **Indexing takes time.** A new pin usually shows up on cid.contact within minutes, sometimes up to an hour. Until then clients may not find it.
 - **Your key.** It signs your advertisements. Keep it only in the `GITPIN_KEY` secret.
