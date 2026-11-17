@@ -212,6 +212,29 @@ func TestWaitServedWrongBody(t *testing.T) {
 	}
 }
 
+func TestWaitServedBuildRequestError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := WaitServed(ctx, http.DefaultClient, "http://exa mple.com", []byte("want"), every)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !strings.Contains(err.Error(), "build request for") {
+		t.Errorf("err %q, want it to mention building the request", err)
+	}
+	if strings.Contains(err.Error(), "<nil>") {
+		t.Errorf("err %q, want it not to wrap a nil context error", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		t.Errorf("err %q, want it not to be a context error", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("WaitServed took %s, want it to fail at once", elapsed)
+	}
+}
+
 func TestSend(t *testing.T) {
 	id := testID(t)
 	head := testCid(t)
@@ -391,6 +414,31 @@ func TestWaitIndexedTimeout(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not indexed yet") {
 		t.Errorf("err %q", err)
+	}
+}
+
+func TestWaitIndexedBuildRequestError(t *testing.T) {
+	id := testID(t)
+	root := testCid(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := WaitIndexed(ctx, http.DefaultClient, "http://exa mple.com", root, id, every)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !strings.Contains(err.Error(), "build request for") {
+		t.Errorf("err %q, want it to mention building the request", err)
+	}
+	if strings.Contains(err.Error(), "<nil>") {
+		t.Errorf("err %q, want it not to wrap a nil context error", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		t.Errorf("err %q, want it not to be a context error", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("WaitIndexed took %s, want it to fail at once instead of retrying", elapsed)
 	}
 }
 

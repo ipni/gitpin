@@ -21,12 +21,13 @@ import (
 
 // WaitServed polls the gateway until the want bytes are served or ctx ends.
 func WaitServed(ctx context.Context, c *http.Client, baseURL string, want []byte, every time.Duration) error {
-	u := strings.TrimRight(baseURL, "/") + "/ipni/v1/ad/head"
+	base := strings.TrimRight(baseURL, "/")
+	u := base + "/ipni/v1/ad/head"
 	last := "no response"
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
-			return fmt.Errorf("%s is not serving the new head yet (last status %s); check that GitHub Pages is on for this repo with source \"Deploy from a branch\" and branch gh-pages, that the repo is public, and that it is named <owner>.github.io: %w", u, last, ctx.Err())
+			return fmt.Errorf("build request for %s: %w", u, err)
 		}
 		resp, err := c.Do(req)
 		if err == nil {
@@ -39,10 +40,15 @@ func WaitServed(ctx context.Context, c *http.Client, baseURL string, want []byte
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("%s is not serving the new head yet (last status %s); check that GitHub Pages is on for this repo with source \"Deploy from a branch\" and branch gh-pages, that the repo is public, and that it is named <owner>.github.io: %w", u, last, ctx.Err())
+			return notServedErr(u, last, base, ctx.Err())
 		case <-time.After(every):
 		}
 	}
+}
+
+// notServedErr is the single error WaitServed reports when the head never appears.
+func notServedErr(u, last, baseURL string, err error) error {
+	return fmt.Errorf("%s is not serving the new head yet (last status %s); check that GitHub Pages is on for this repo with source \"Deploy from a branch\" and branch gh-pages, that the repo is public, and that the site is served at %s: %w", u, last, baseURL, err)
 }
 
 // Send announces the chain head to an indexer.
@@ -81,28 +87,29 @@ func WaitIndexed(ctx context.Context, c *http.Client, indexerURL string, root ci
 	u := strings.TrimRight(indexerURL, "/") + "/cid/" + root.String()
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err == nil {
-			req.Header.Set("Accept", "application/json")
-			resp, rerr := c.Do(req)
-			if rerr == nil {
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20+1))
-				drainAndClose(resp)
-				if resp.StatusCode == http.StatusOK {
-					var result struct {
-						MultihashResults []struct {
-							ProviderResults []struct {
-								Provider struct {
-									ID string
-								}
+		if err != nil {
+			return fmt.Errorf("build request for %s: %w", u, err)
+		}
+		req.Header.Set("Accept", "application/json")
+		resp, rerr := c.Do(req)
+		if rerr == nil {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<20+1))
+			drainAndClose(resp)
+			if resp.StatusCode == http.StatusOK {
+				var result struct {
+					MultihashResults []struct {
+						ProviderResults []struct {
+							Provider struct {
+								ID string
 							}
 						}
 					}
-					if json.Unmarshal(body, &result) == nil {
-						for _, mr := range result.MultihashResults {
-							for _, pr := range mr.ProviderResults {
-								if pr.Provider.ID == id.String() {
-									return nil
-								}
+				}
+				if json.Unmarshal(body, &result) == nil {
+					for _, mr := range result.MultihashResults {
+						for _, pr := range mr.ProviderResults {
+							if pr.Provider.ID == id.String() {
+								return nil
 							}
 						}
 					}
