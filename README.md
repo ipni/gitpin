@@ -1,21 +1,19 @@
 # gitpin
 
-**Publish files from a GitHub repo to IPFS. No node to run, no service to pay.**
+**Put files on IPFS straight from a GitHub repo. No server to run, nothing to pay.**
 
-Put a file in your repo's `pins/` folder and push. You get a CID: a name for those exact bytes that anyone can check, and that keeps working wherever the bytes are hosted later.
+On the web, a link says *where* a file is. On [IPFS](https://ipfs.tech), a link says *what* the file is. Every file gets a **CID** (content identifier), a fingerprint computed from its exact bytes, such as `bafkreidq7f...`. Anyone who fetches a CID can check that the bytes they got are the ones it names, and the same CID works whichever server sends them. That makes a CID a good way to cite a dataset, ship a release, or point at an NFT or website asset that must never change under you.
+
+gitpin gets your files a CID without running any IPFS software. Drop a file into your repo's `pins/` folder and push. A GitHub Action publishes it, and the run summary shows its CID with links you can share.
 
 ```mermaid
 flowchart LR
-    A["Your files in pins/"] --> B["GitHub Action"]
-    B --> C["GitHub Pages"]
-    B -. announce .-> D["cid.contact"]
-    D --> E["Anyone with the CID"]
+    A["You push a file to pins/"] --> B["GitHub Action builds it"]
+    B --> C["GitHub Pages serves it"]
+    B -. "tells" .-> D["cid.contact index"]
+    D --> E["Anyone with the CID finds it"]
     C --> E
 ```
-
-**Who it is for.** People who need a CID: datasets you cite in a paper, NFT or dapp assets, software releases, ENS sites.
-
-**Who it is not for.** If you only want a website, plain GitHub Pages is simpler. You do not need gitpin.
 
 **Jump to:** [First example](#example-your-first-cid) | [More examples](#more-examples) | [Get started](#get-started) | [Why](#why-gitpin) | [How it works](#how-it-works) | [Configuration](#configuration) | [Custom domain](#use-a-custom-domain) | [Command line](#command-line) | [Limits](#limits) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | [License](#license)
 
