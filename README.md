@@ -19,6 +19,7 @@ gitpin is for people who need a CID: datasets you cite in a paper, NFT or dapp a
 - [Limits](#limits)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [License](#license)
 
 ## Example: your first CID
 
@@ -239,3 +240,7 @@ node --test keygen/keygen.test.mjs         # key page (Node 24)
 ```
 
 Issues and pull requests are welcome at [github.com/ipni/gitpin](https://github.com/ipni/gitpin).
+
+## License
+
+Dual-licensed under [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) or [MIT](https://opensource.org/licenses/MIT), at your option, like other IPNI and IPFS projects. See [LICENSE.md](LICENSE.md).
