@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -280,10 +281,18 @@ func runWaitIndexed(ctx context.Context, args []string, stdout, stderr io.Writer
 	return exitOK
 }
 
-// normalizeBaseURL strips one trailing slash from a base URL that site.BaseAddr
-// has already accepted, so https://x and https://x/ name the same site.
+// normalizeBaseURL lowercases the scheme and host and drops one trailing slash
+// from the path of a base URL that site.BaseAddr has already accepted, so
+// https://Alice.github.io and https://alice.github.io/ name the same site.
 func normalizeBaseURL(baseURL string) string {
-	return strings.TrimSuffix(baseURL, "/")
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return strings.TrimSuffix(baseURL, "/")
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	return u.String()
 }
 
 // fail prints a gitpin-prefixed error to stderr and returns the error exit code.
