@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -261,6 +262,28 @@ func TestWaitServedRedirect(t *testing.T) {
 	}
 }
 
+func TestWaitServedRelativeRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "/elsewhere")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := WaitServed(ctx, srv.Client(), srv.URL, []byte("want"), every)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	wantURL := srv.URL + "/elsewhere"
+	if !strings.Contains(err.Error(), wantURL) {
+		t.Errorf("err %q, want it to contain %q", err, wantURL)
+	}
+	if strings.Contains(err.Error(), "(for example )") {
+		t.Errorf("err %q, want it not to contain \"(for example )\"", err)
+	}
+}
+
 func TestSend(t *testing.T) {
 	id := testID(t)
 	head := testCid(t)
@@ -380,6 +403,7 @@ func TestSendBadURLs(t *testing.T) {
 func TestWaitIndexed(t *testing.T) {
 	id := testID(t)
 	root := testCid(t)
+	ctxID := base64.StdEncoding.EncodeToString(root.Bytes())
 	var mu sync.Mutex
 	count := 0
 	var path, accept string
@@ -398,7 +422,7 @@ func TestWaitIndexed(t *testing.T) {
 			io.WriteString(w, `{"MultihashResults":[{"ProviderResults":[{"Provider":{"ID":"12D3KooOther","Addrs":[]}}]}]}`)
 		default:
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `{"MultihashResults":[{"ProviderResults":[{"Provider":{"ID":"`+id.String()+`","Addrs":[]}}]}]}`)
+			io.WriteString(w, `{"MultihashResults":[{"ProviderResults":[{"Provider":{"ID":"`+id.String()+`","Addrs":[]},"ContextID":"`+ctxID+`"}]}]}`)
 		}
 	}))
 	defer srv.Close()
@@ -471,6 +495,7 @@ func TestWaitIndexedBuildRequestError(t *testing.T) {
 func TestWaitIndexedInvalidJSON(t *testing.T) {
 	id := testID(t)
 	root := testCid(t)
+	ctxID := base64.StdEncoding.EncodeToString(root.Bytes())
 	var mu sync.Mutex
 	count := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -486,7 +511,7 @@ func TestWaitIndexedInvalidJSON(t *testing.T) {
 			io.WriteString(w, `{"MultihashResults":[]}`)
 			return
 		}
-		io.WriteString(w, `{"MultihashResults":[{"ProviderResults":[{"Provider":{"ID":"`+id.String()+`","Addrs":[]}}]}]}`)
+		io.WriteString(w, `{"MultihashResults":[{"ProviderResults":[{"Provider":{"ID":"`+id.String()+`","Addrs":[]},"ContextID":"`+ctxID+`"}]}]}`)
 	}))
 	defer srv.Close()
 
@@ -499,5 +524,29 @@ func TestWaitIndexedInvalidJSON(t *testing.T) {
 	defer mu.Unlock()
 	if count != 3 {
 		t.Fatalf("want 3 requests, got %d", count)
+	}
+}
+
+func TestWaitIndexedWrongContextID(t *testing.T) {
+	id := testID(t)
+	root := testCid(t)
+	wrongCtxID := base64.StdEncoding.EncodeToString([]byte("wrong"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"MultihashResults":[{"ProviderResults":[{"Provider":{"ID":"`+id.String()+`","Addrs":[]},"ContextID":"`+wrongCtxID+`"}]}]}`)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := WaitIndexed(ctx, srv.Client(), srv.URL, root, id, every)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err %v", err)
+	}
+	if !strings.Contains(err.Error(), "not indexed yet") {
+		t.Errorf("err %q, want it to contain \"not indexed yet\"", err)
 	}
 }

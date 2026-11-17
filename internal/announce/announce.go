@@ -86,6 +86,9 @@ func redirectErr(u, loc string) error {
 	if lu, err := url.Parse(loc); err == nil && lu.Host != "" {
 		origin = lu.Scheme + "://" + lu.Host
 	}
+	if origin == "" {
+		return fmt.Errorf("%s redirects to %s; IPFS clients do not follow redirects, so set base-url to the site that serves the files directly", u, loc)
+	}
 	return fmt.Errorf("%s redirects to %s; IPFS clients do not follow redirects, so set base-url to the site that serves the files directly (for example %s)", u, loc, origin)
 }
 
@@ -145,13 +148,14 @@ func WaitIndexed(ctx context.Context, c *http.Client, indexerURL string, root ci
 							Provider struct {
 								ID string
 							}
+							ContextID []byte
 						}
 					}
 				}
 				if json.Unmarshal(body, &result) == nil {
 					for _, mr := range result.MultihashResults {
 						for _, pr := range mr.ProviderResults {
-							if pr.Provider.ID == id.String() {
+							if pr.Provider.ID == id.String() && bytes.Equal(pr.ContextID, root.Bytes()) {
 								return nil
 							}
 						}

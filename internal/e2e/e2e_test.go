@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -949,8 +950,9 @@ func TestEndToEnd(t *testing.T) {
 		queried := map[string]bool{}
 		respondIndexed := func(w http.ResponseWriter, c cid.Cid, provider string) {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"MultihashResults":[{"Multihash":%q,"ProviderResults":[{"Provider":{"ID":%q}}]}]}`,
-				c.Hash().B58String(), provider)
+			ctxID := base64.StdEncoding.EncodeToString(c.Bytes())
+			fmt.Fprintf(w, `{"MultihashResults":[{"Multihash":%q,"ProviderResults":[{"Provider":{"ID":%q},"ContextID":%q}]}]}`,
+				c.Hash().B58String(), provider, ctxID)
 		}
 		fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/cid/") {

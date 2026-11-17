@@ -294,6 +294,7 @@ func normalizeBaseURL(baseURL string) string {
 	if u.Scheme == "https" && u.Port() == "443" {
 		u.Host = strings.TrimSuffix(u.Host, ":443")
 	}
+	u.Host = strings.TrimSuffix(u.Host, ":")
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	return u.String()
 }

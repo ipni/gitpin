@@ -176,6 +176,7 @@ func TestNormalizeBaseURL(t *testing.T) {
 		{"https://Alice.github.io/", "https://alice.github.io"},
 		{"https://ALICE.GitHub.IO", "https://alice.github.io"},
 		{"https://x.github.io:443", "https://x.github.io"},
+		{"https://alice.github.io:", "https://alice.github.io"},
 	}
 	for _, c := range cases {
 		if got := normalizeBaseURL(c[0]); got != c[1] {
