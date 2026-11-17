@@ -229,6 +229,7 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 ## Troubleshooting
 
 - **"... is not serving the new head yet"**: Pages is off, its source is not the `gh-pages` branch, the repo is private, the repo is not named `<owner>.github.io` and no `base-url` is set, or a custom domain is not pointing at Pages yet. Fix the setting and re-run the workflow.
+- **"... redirects to ..."**: the site redirects, usually because a custom domain is set while `base-url` is still the default `https://<owner>.github.io`, or the domain was given as the apex while Pages serves `www` (or the other way round); set `base-url` to the exact origin that serves the site.
 - **"The GITPIN_KEY secret is not set"**: add the secret (step 3 of [Get started](#get-started)).
 - **"needs a repo named `<owner>.github.io`"**: rename the repo, or [use a custom domain](#use-a-custom-domain).
 - **"GITPIN_KEY belongs to ... but gitpin.json was written by ..."**: the key changed since the last run. If that was on purpose (for example after a leak), delete `gitpin.json` and the `ipni/` folder from the `gh-pages` branch, then re-run; `ipfs/` can stay. The new key has a new peer ID; records under the old one expire on cid.contact over time.

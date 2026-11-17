@@ -47,7 +47,7 @@ func Publish(p Params, prev state.State, roots []dag.Root) (state.State, bool, e
 		return state.State{}, false, fmt.Errorf("peer id: %w", err)
 	}
 	if prev.PeerID != "" && prev.PeerID != id.String() {
-		return state.State{}, false, fmt.Errorf("GITPIN_KEY belongs to %s, but gitpin.json was written by %s; to start over with a new key, delete gitpin.json and ipni/ from the gh-pages branch", id, prev.PeerID)
+		return state.State{}, false, fmt.Errorf("GITPIN_KEY belongs to %s, but gitpin.json was written by %s; to start over with a new key, delete gitpin.json and ipni/ from the site branch (gh-pages by default)", id, prev.PeerID)
 	}
 
 	var headCid cid.Cid

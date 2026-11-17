@@ -235,6 +235,32 @@ func TestWaitServedBuildRequestError(t *testing.T) {
 	}
 }
 
+func TestWaitServedRedirect(t *testing.T) {
+	location := "https://alice.example/ipni/v1/ad/head"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, location, http.StatusMovedPermanently)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := WaitServed(ctx, srv.Client(), srv.URL, []byte("want"), every)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if !strings.Contains(err.Error(), "redirects to") {
+		t.Errorf("err %q, want it to contain \"redirects to\"", err)
+	}
+	if !strings.Contains(err.Error(), location) {
+		t.Errorf("err %q, want it to contain the Location %q", err, location)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("WaitServed took %s, want it to return at once on a redirect", elapsed)
+	}
+}
+
 func TestSend(t *testing.T) {
 	id := testID(t)
 	head := testCid(t)

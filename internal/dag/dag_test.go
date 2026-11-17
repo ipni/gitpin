@@ -2,10 +2,12 @@ package dag
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -509,5 +511,49 @@ func TestEmptyFile(t *testing.T) {
 	}
 	if len(r.Blocks) != 1 {
 		t.Fatalf("blocks = %d, want 1", len(r.Blocks))
+	}
+}
+
+func TestShardedDirectory(t *testing.T) {
+	tmp := t.TempDir()
+	contentDir := filepath.Join(tmp, "content")
+	blocksDir := filepath.Join(tmp, "blocks")
+	subDir := filepath.Join(contentDir, "sub")
+	mkdirAll(t, subDir)
+
+	for i := 0; i < 5000; i++ {
+		name := fmt.Sprintf("file-with-a-fairly-long-name-%06d.txt", i)
+		writeFile(t, filepath.Join(subDir, name), []byte(strconv.Itoa(i)))
+	}
+
+	roots, err := Build(contentDir, blocksDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roots) != 1 {
+		t.Fatalf("got %d roots, want 1", len(roots))
+	}
+	r := roots[0]
+
+	entries, err := os.ReadDir(blocksDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() > 1<<20 {
+			t.Errorf("block %s is %d bytes, want <= 1 MiB", e.Name(), info.Size())
+		}
+	}
+
+	rootData, err := os.ReadFile(filepath.Join(blocksDir, r.CID.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rootData) >= 64*1024 {
+		t.Errorf("root block is %d bytes, want < 64 KiB (directory not sharded)", len(rootData))
 	}
 }

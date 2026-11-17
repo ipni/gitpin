@@ -66,6 +66,7 @@ func Build(contentDir, blocksDir string) ([]Root, error) {
 	}
 
 	var cur map[cid.Cid]struct{}
+	var curName string
 	global := make(map[cid.Cid]struct{})
 	var totalBytes int64
 
@@ -79,6 +80,9 @@ func Build(contentDir, blocksDir string) ([]Root, error) {
 			}
 			c := cl.Cid
 			data := buf.Bytes()
+			if len(data) > 1<<20 {
+				return fmt.Errorf("block for %s is larger than 1 MiB (%d bytes); IPFS clients reject blocks this big. Split large folders into subfolders.", curName, len(data))
+			}
 			if _, exists := global[c]; !exists {
 				global[c] = struct{}{}
 				totalBytes += int64(len(data))
@@ -121,6 +125,7 @@ func Build(contentDir, blocksDir string) ([]Root, error) {
 	var roots []Root
 	for _, name := range names {
 		cur = make(map[cid.Cid]struct{})
+		curName = name
 		link, _, err := buildPath(filepath.Join(contentDir, name), name, &ls)
 		if err != nil {
 			return nil, err
