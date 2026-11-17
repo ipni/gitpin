@@ -1,0 +1,160 @@
+name: gitpin
+description: Publish the files in a folder to IPFS, served by GitHub Pages and indexed by cid.contact
+branding:
+  icon: upload-cloud
+  color: blue
+inputs:
+  key:
+    description: The gitpin publishing key. Pass secrets.GITPIN_KEY.
+    required: true
+  content:
+    description: Folder to publish, relative to the repo root.
+    default: pins
+  branch:
+    description: Branch the site is pushed to.
+    default: gh-pages
+  base-url:
+    description: Base URL the site is served from. Leave empty for the default <owner>.github.io host.
+    default: ""
+  indexer:
+    description: CID indexer to announce to.
+    default: https://cid.contact
+  wait-indexed:
+    description: Whether to wait for the indexer to catch up after publishing.
+    default: "true"
+outputs:
+  head:
+    value: ${{ steps.publish.outputs.head }}
+  peer-id:
+    value: ${{ steps.publish.outputs.peer-id }}
+runs:
+  using: composite
+  steps:
+    - name: check
+      id: check
+      shell: bash
+      env:
+        KEY: ${{ inputs.key }}
+        BASE_URL_INPUT: ${{ inputs.base-url }}
+      run: |
+        owner_lc="${GITHUB_REPOSITORY_OWNER,,}"
+        repo_lc="${GITHUB_REPOSITORY#*/}"
+        repo_lc="${repo_lc,,}"
+        if [ -z "$BASE_URL_INPUT" ]; then
+          if [ "$repo_lc" != "${owner_lc}.github.io" ]; then
+            echo "::error::gitpin needs a repo named ${owner_lc}.github.io (this one is ${GITHUB_REPOSITORY#*/}), or a custom domain in the base-url input. See \"Use a custom domain\" in the gitpin README."
+            exit 1
+          fi
+          base_url="https://${owner_lc}.github.io"
+        else
+          base_url="$BASE_URL_INPUT"
+        fi
+        if [ -z "$KEY" ]; then
+          echo "::error::The GITPIN_KEY secret is not set. Make a key and add it as a repository secret named GITPIN_KEY (see the README)."
+          exit 1
+        fi
+        echo "base_url=${base_url}" >> "$GITHUB_OUTPUT"
+    - name: setup-go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+    - name: build
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        cd "$ACTION_PATH" && go build -o "$RUNNER_TEMP/gitpin" ./cmd/gitpin
+    - name: site
+      id: site
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        site="$RUNNER_TEMP/gitpin-site"
+        mkdir -p "$site"
+        cd "$GITHUB_WORKSPACE"
+        set +e
+        git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null
+        code=$?
+        set -e
+        if [ "$code" -eq 0 ]; then
+          git fetch --no-tags --depth=1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+          git archive "refs/remotes/origin/$BRANCH" | tar -x -C "$site"
+        elif [ "$code" -ne 2 ]; then
+          echo "::error::failed to look up branch $BRANCH (git ls-remote exit $code); refusing to continue"
+          exit 1
+        fi
+        echo "dir=${site}" >> "$GITHUB_OUTPUT"
+    - name: publish
+      id: publish
+      shell: bash
+      env:
+        GITPIN_KEY: ${{ inputs.key }}
+        CONTENT: ${{ inputs.content }}
+        BASE_URL: ${{ steps.check.outputs.base_url }}
+        SITE: ${{ steps.site.outputs.dir }}
+      run: |
+        "$RUNNER_TEMP/gitpin" publish --content "$GITHUB_WORKSPACE/$CONTENT" --site "$SITE" --base-url "$BASE_URL" > "$RUNNER_TEMP/publish.json"
+        head=$(jq -r '.head' "$RUNNER_TEMP/publish.json")
+        peer_id=$(jq -r '.peer_id' "$RUNNER_TEMP/publish.json")
+        echo "head=${head}" >> "$GITHUB_OUTPUT"
+        echo "peer-id=${peer_id}" >> "$GITHUB_OUTPUT"
+    - name: push
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        SITE: ${{ steps.site.outputs.dir }}
+        HEAD_CID: ${{ steps.publish.outputs.head }}
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        export GIT_INDEX_FILE="$RUNNER_TEMP/gitpin.index"
+        git --work-tree="$SITE" add -A .
+        tree=$(git --work-tree="$SITE" write-tree)
+        commit=$(GIT_AUTHOR_NAME="github-actions[bot]" GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com" GIT_COMMITTER_NAME="github-actions[bot]" GIT_COMMITTER_EMAIL="41898282+github-actions[bot]@users.noreply.github.com" git commit-tree "$tree" -m "gitpin: publish $HEAD_CID ($(date -u +%Y-%m-%dT%H:%M:%SZ))")
+        git push --force origin "$commit:refs/heads/$BRANCH"
+        unset GIT_INDEX_FILE
+    - name: announce
+      shell: bash
+      env:
+        SITE: ${{ steps.site.outputs.dir }}
+        BASE_URL: ${{ steps.check.outputs.base_url }}
+        INDEXER: ${{ inputs.indexer }}
+      run: |
+        "$RUNNER_TEMP/gitpin" announce --site "$SITE" --base-url "$BASE_URL" --indexer "$INDEXER"
+    - name: wait-indexed
+      if: inputs.wait-indexed == 'true'
+      shell: bash
+      env:
+        SITE: ${{ steps.site.outputs.dir }}
+        INDEXER: ${{ inputs.indexer }}
+      run: |
+        set +e
+        "$RUNNER_TEMP/gitpin" wait-indexed --site "$SITE" --indexer "$INDEXER"
+        code=$?
+        set -e
+        if [ "$code" -eq 2 ]; then
+          echo "::warning::cid.contact has not indexed every pin yet. Your files are published; the index usually catches up within an hour."
+        elif [ "$code" -ne 0 ]; then
+          exit "$code"
+        fi
+    - name: summary
+      if: always() && steps.publish.outcome == 'success'
+      shell: bash
+      env:
+        SITE: ${{ steps.site.outputs.dir }}
+      run: |
+        {
+          echo "## Published to IPFS"
+          echo
+          echo "Peer ID: $(jq -r '.peer_id' "$RUNNER_TEMP/publish.json")"
+          echo
+          n=$(jq '.roots | length' "$RUNNER_TEMP/publish.json")
+          if [ "$n" -eq 0 ]; then
+            echo "Nothing pinned: the folder is empty."
+          else
+            echo "| Name | CID | Links |"
+            echo "| --- | --- | --- |"
+            jq -r '.roots[] | "| \(.name) | `\(.cid)` | [open](https://inbrowser.link/ipfs/\(.cid)) [ipfs.io](https://ipfs.io/ipfs/\(.cid)) [dweb.link](https://dweb.link/ipfs/\(.cid)) [index](https://cid.contact/cid/\(.cid)) |"' "$RUNNER_TEMP/publish.json"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
