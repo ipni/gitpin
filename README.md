@@ -94,16 +94,14 @@ You can also add the CID to any IPFS pinning service.
 You need a GitHub account and a terminal with `ssh-keygen` (built into macOS, Linux and Windows 10 or newer).
 
 1. **Create the repo.** On [github.com/ipni/gitpin-template](https://github.com/ipni/gitpin-template) click **Use this template** > **Create a new repository**. Name it exactly `<your-username>.github.io` and make it **Public** (free accounts need a public repo for Pages).
-2. **Make a key.** Run:
+2. **Make a key.** In a terminal, run:
 
    ```sh
-   ssh-keygen -t ed25519 -N '' -C gitpin -f gitpin-key
+   ssh-keygen -t ed25519 -C gitpin -f gitpin-key
    ```
 
-   This writes `gitpin-key` (the private key) and `gitpin-key.pub` in the current folder. Make a new key just for gitpin: never use your own SSH login key, because the secret can be read by any workflow in the repo.
-3. **Add the secret.** Either run `gh secret set GITPIN_KEY --repo <your-username>/<your-username>.github.io < gitpin-key` with the GitHub CLI, or open **Settings** > **Secrets and variables** > **Actions** > **New repository secret**, name it `GITPIN_KEY`, paste the whole contents of `gitpin-key` including the BEGIN and END lines, and click **Add secret**. Then delete both files (`rm gitpin-key gitpin-key.pub`; the secret is the only copy you need, and a lost key is replaced as described under the key-change troubleshooting entry).
-
-   In Windows PowerShell, write the empty passphrase as `-N '""'`, add the secret by pasting it in Settings (PowerShell has no `<` redirect), and delete the files with `del gitpin-key, gitpin-key.pub`.
+   When it asks for a passphrase, press **Enter** twice (gitpin needs a key without one). This makes two files in the current folder: `gitpin-key` (the private key) and `gitpin-key.pub`. Make a new key just for gitpin, never reuse your own SSH login key: any workflow in the repo can read the secret.
+3. **Add the secret.** Open `gitpin-key` in a text editor and copy all of it, including the `BEGIN` and `END` lines. In the new repo: **Settings** > **Secrets and variables** > **Actions** > **New repository secret**. Name it `GITPIN_KEY`, paste, click **Add secret**. Then delete both key files; the secret is the only copy you need.
 4. **Run the workflow once.** **Actions** tab > **gitpin** workflow > **Run workflow**. This run creates the `gh-pages` branch, then waits up to 10 minutes for Pages and fails, because Pages is not serving that branch yet. That is expected.
 5. **Point Pages at `gh-pages`.** **Settings** > **Pages** > **Build and deployment**: Source **Deploy from a branch**, Branch `gh-pages`, folder `/ (root)`, **Save**. GitHub usually has Pages on already for a repo named `<your-username>.github.io`, serving `main`. You only change the branch.
 6. **Re-run the workflow.** When it is green, the run summary lists each pin with its CID and links.
@@ -333,7 +331,7 @@ The secret holds something else, often the `gitpin-key.pub` file or a cut-off pa
 <details>
 <summary>"GITPIN_KEY has a passphrase"</summary>
 
-Your key was made with a passphrase. Make a new key with `-N ''` (the command in step 2 of [Get started](#get-started)) and replace the secret.
+Your key was made with a passphrase. Make a new key (step 2 of [Get started](#get-started)), press **Enter** at the passphrase prompt, and replace the secret.
 
 </details>
 

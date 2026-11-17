@@ -19,7 +19,7 @@ import (
 var (
 	errEmpty      = errors.New("GITPIN_KEY is empty")
 	errBadKey     = errors.New("GITPIN_KEY is not an Ed25519 key (expected an ssh-keygen -t ed25519 private key or gitpin keygen output)")
-	errPassphrase = errors.New("GITPIN_KEY has a passphrase; make a new key without one (ssh-keygen -N '')")
+	errPassphrase = errors.New("GITPIN_KEY has a passphrase; make a new key and press Enter at the passphrase prompt")
 )
 
 // EnvVar is the environment variable holding the base64-encoded signing key.
