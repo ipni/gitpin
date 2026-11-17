@@ -221,7 +221,7 @@ func runAnnounce(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		}
 		wctx, cancel := context.WithTimeout(ctx, *waitServed)
 		defer cancel()
-		if err := announce.WaitServed(wctx, http.DefaultClient, base, want, *every); err != nil {
+		if err := announce.WaitServed(wctx, &http.Client{Timeout: 30 * time.Second}, base, want, *every); err != nil {
 			return fail(stderr, err)
 		}
 	}
@@ -269,7 +269,7 @@ func runWaitIndexed(ctx context.Context, args []string, stdout, stderr io.Writer
 		if err != nil {
 			return fail(stderr, err)
 		}
-		if err := announce.WaitIndexed(tctx, http.DefaultClient, *indexerURL, root, id, *every); err != nil {
+		if err := announce.WaitIndexed(tctx, &http.Client{Timeout: 30 * time.Second}, *indexerURL, root, id, *every); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				fmt.Fprintf(stderr, "gitpin: not indexed yet: %s (cid.contact can take a while; try again later)\n", r.CID)
 				return exitNotIndexed
@@ -291,6 +291,9 @@ func normalizeBaseURL(baseURL string) string {
 	}
 	u.Scheme = strings.ToLower(u.Scheme)
 	u.Host = strings.ToLower(u.Host)
+	if u.Scheme == "https" && u.Port() == "443" {
+		u.Host = strings.TrimSuffix(u.Host, ":443")
+	}
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	return u.String()
 }

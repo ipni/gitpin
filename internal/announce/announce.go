@@ -24,6 +24,14 @@ func WaitServed(ctx context.Context, c *http.Client, baseURL string, want []byte
 	base := strings.TrimRight(baseURL, "/")
 	u := base + "/ipni/v1/ad/head"
 	last := "no response"
+	if c == nil {
+		c = http.DefaultClient
+	}
+	noredirect := *c
+	noredirect.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	c = &noredirect
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
@@ -31,12 +39,19 @@ func WaitServed(ctx context.Context, c *http.Client, baseURL string, want []byte
 		}
 		resp, err := c.Do(req)
 		if err == nil {
+			if isRedirect(resp.StatusCode) {
+				loc := redirectLocation(resp)
+				resp.Body.Close()
+				return redirectErr(u, loc)
+			}
 			body, rerr := io.ReadAll(io.LimitReader(resp.Body, 1<<20+1))
 			resp.Body.Close()
 			last = fmt.Sprintf("%d", resp.StatusCode)
 			if rerr == nil && resp.StatusCode == http.StatusOK && bytes.Equal(body, want) {
 				return nil
 			}
+		} else if ctx.Err() == nil {
+			last = "no response"
 		}
 		select {
 		case <-ctx.Done():
@@ -46,9 +61,37 @@ func WaitServed(ctx context.Context, c *http.Client, baseURL string, want []byte
 	}
 }
 
+// isRedirect reports whether status is one IPFS clients treat as "not available".
+func isRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	default:
+		return false
+	}
+}
+
+// redirectLocation returns the resolved Location header of a redirect response.
+func redirectLocation(resp *http.Response) string {
+	if loc, err := resp.Location(); err == nil {
+		return loc.String()
+	}
+	return resp.Header.Get("Location")
+}
+
+// redirectErr is the error WaitServed returns at once when the site redirects.
+func redirectErr(u, loc string) error {
+	origin := ""
+	if lu, err := url.Parse(loc); err == nil && lu.Host != "" {
+		origin = lu.Scheme + "://" + lu.Host
+	}
+	return fmt.Errorf("%s redirects to %s; IPFS clients do not follow redirects, so set base-url to the site that serves the files directly (for example %s)", u, loc, origin)
+}
+
 // notServedErr is the single error WaitServed reports when the head never appears.
 func notServedErr(u, last, baseURL string, err error) error {
-	return fmt.Errorf("%s is not serving the new head yet (last status %s); check that GitHub Pages is on for this repo with source \"Deploy from a branch\" and branch gh-pages, that the repo is public, and that the site is served at %s: %w", u, last, baseURL, err)
+	return fmt.Errorf("%s is not serving the new head yet (last status %s); check that GitHub Pages is on for this repo with source \"Deploy from a branch\" and the site branch (gh-pages by default), that the repo is public, and that the site is served at %s: %w", u, last, baseURL, err)
 }
 
 // Send announces the chain head to an indexer.

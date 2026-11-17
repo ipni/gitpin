@@ -54,6 +54,7 @@ Delete the file or folder from `pins/` and commit. The blocks are removed from t
 ## If something goes wrong
 
 - **"... is not serving the new head yet"**: Pages is off, the source is not set to the `gh-pages` branch, the repo is private, the repo is not named `<owner>.github.io` and no `base-url` is set, or a custom domain is not pointing at Pages yet.
+- **"... redirects to ..."**: the site redirects, usually because a custom domain is set while `base-url` is still the default `https://<owner>.github.io`, or the domain was given as the apex while Pages serves `www` (or the other way round); set `base-url` to the exact origin that serves the site.
 - **"The GITPIN_KEY secret is not set"**: add the secret under Settings > Secrets and variables > Actions.
 - **"GITPIN_KEY belongs to ... but gitpin.json was written by ..."**: the key changed; see the key bullet above.
 - **"needs a repo named `<owner>.github.io`"**: rename the repo, or use a custom domain (see the [main README](https://github.com/ipni/gitpin#readme)).
