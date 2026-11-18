@@ -17,7 +17,7 @@ flowchart LR
 
 > **A starting point, not a safe home.** gitpin serves your files from one place: your GitHub Pages site. If GitHub has an outage, the repo goes away, or the content is taken down, the CID stops resolving unless someone else holds a copy. IPFS is resilient and censorship resistant only when several independent nodes hold the content, so for anything that matters, also [pin it elsewhere](#pin-it-elsewhere-too).
 
-**Jump to:** [First example](#example-your-first-cid) | [More examples](#more-examples) | [Pin elsewhere](#pin-it-elsewhere-too) | [Get started](#get-started) | [Why](#why-gitpin) | [How it works](#how-it-works) | [Configuration](#configuration) | [Custom domain](#use-a-custom-domain) | [Command line](#command-line) | [Limits](#limits) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | [License](#license)
+**Jump to:** [First example](#example-your-first-cid) | [More examples](#more-examples) | [Pin elsewhere](#pin-it-elsewhere-too) | [Get started](#get-started) | [AI agent](#let-an-ai-agent-do-it) | [Why](#why-gitpin) | [How it works](#how-it-works) | [Configuration](#configuration) | [Custom domain](#use-a-custom-domain) | [Command line](#command-line) | [Limits](#limits) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | [License](#license)
 
 ---
 
@@ -113,6 +113,16 @@ You need a GitHub account and a terminal with `ssh-keygen` (built into macOS, Li
 6. **Run the workflow.** **Actions** tab > **gitpin** workflow > **Run workflow**. When it is green, the run summary lists each pin with its CID and links. The first run takes a few minutes longer while Pages deploys.
 
 The [template README](https://github.com/ipni/gitpin-template#readme) walks through the same steps for people new to GitHub Actions. Already have a `<your-username>.github.io` repo? If you already use it for a website, adding gitpin to it would replace that website, so [use a custom domain](#use-a-custom-domain) or create the repo under a GitHub organization you own.
+
+### Let an AI agent do it
+
+This repo ships an agent skill, [`skills/gitpin/SKILL.md`](skills/gitpin/SKILL.md). It sets up the repo, key and Pages with the GitHub CLI (`gh`), pins a file and reports its CID. In Claude Code:
+
+```
+/plugin install gitpin --marketplace ipni/gitpin
+```
+
+On older Claude Code versions, run `/plugin marketplace add ipni/gitpin` and then `/plugin install gitpin@ipni`. Then ask, for example, "pin report.pdf to IPFS". Other agents can read the same `SKILL.md` file directly. The agent needs `gh` logged in with the `repo` and `workflow` scopes.
 
 ---
 

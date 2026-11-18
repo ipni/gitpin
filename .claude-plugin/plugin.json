@@ -1,0 +1,19 @@
+{
+  "name": "gitpin",
+  "version": "1.0.0",
+  "description": "Pin files to IPFS with no IPFS node: an agent skill that sets up ipni/gitpin (GitHub Pages + cid.contact) with the gh CLI.",
+  "homepage": "https://github.com/ipni/gitpin",
+  "repository": "https://github.com/ipni/gitpin",
+  "license": "Apache-2.0 OR MIT",
+  "keywords": [
+    "ipfs",
+    "pin",
+    "cid",
+    "github-pages",
+    "ipni"
+  ],
+  "author": {
+    "name": "IPNI",
+    "url": "https://github.com/ipni"
+  }
+}

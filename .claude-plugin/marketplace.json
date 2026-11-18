@@ -1,0 +1,14 @@
+{
+  "name": "ipni",
+  "owner": {
+    "name": "IPNI"
+  },
+  "description": "Claude Code plugins from IPNI.",
+  "plugins": [
+    {
+      "name": "gitpin",
+      "source": "./",
+      "description": "Pin files to IPFS with no IPFS node, using a GitHub repo, GitHub Pages and cid.contact."
+    }
+  ]
+}
