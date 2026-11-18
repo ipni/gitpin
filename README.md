@@ -1,6 +1,6 @@
 # gitpin
 
-**Put files on IPFS straight from a GitHub repo. No server to run, nothing to pay.**
+**A hands-on first step into IPFS: publish files straight from a GitHub repo, with no IPFS node to run.**
 
 On the web, a link says *where* a file is. On [IPFS](https://ipfs.tech), a link says *what* the file is. Every file gets a **CID** (content identifier), a fingerprint computed from its exact bytes, such as `bafkreidq7f...`. Anyone who fetches a CID can check that the bytes they got are the ones it names, and the same CID works whichever server sends them. That makes a CID a good way to cite a dataset, ship a release, or point at an NFT or website asset that must never change under you.
 
@@ -15,7 +15,9 @@ flowchart LR
     C --> E
 ```
 
-**Jump to:** [First example](#example-your-first-cid) | [More examples](#more-examples) | [Get started](#get-started) | [Why](#why-gitpin) | [How it works](#how-it-works) | [Configuration](#configuration) | [Custom domain](#use-a-custom-domain) | [Command line](#command-line) | [Limits](#limits) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | [License](#license)
+> **A starting point, not a safe home.** gitpin serves your files from one place: your GitHub Pages site. If GitHub has an outage, the repo goes away, or the content is taken down, the CID stops resolving unless someone else holds a copy. IPFS is resilient and censorship resistant only when several independent nodes hold the content, so for anything that matters, also [pin it elsewhere](#pin-it-elsewhere-too).
+
+**Jump to:** [First example](#example-your-first-cid) | [More examples](#more-examples) | [Pin elsewhere](#pin-it-elsewhere-too) | [Get started](#get-started) | [Why](#why-gitpin) | [How it works](#how-it-works) | [Configuration](#configuration) | [Custom domain](#use-a-custom-domain) | [Command line](#command-line) | [Limits](#limits) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | [License](#license)
 
 ---
 
@@ -79,13 +81,17 @@ For anything bigger, or to have the check done for you, use Kubo (`ipfs cat <cid
 - Edit a file in `pins/` and push: it gets a new CID, and the old CID stops resolving from your site.
 - Delete it from `pins/` and push: its blocks are removed from the site and cid.contact is told to drop the record.
 
-**Keep a second copy.** Your site is the only server holding the files. To add another, pin the same CID elsewhere. The links do not change.
+---
+
+## Pin it elsewhere too
+
+Your Pages site is the only server holding the files, so a GitHub outage, a deleted repo or a takedown makes them unreachable. Every other node that pins the same CID is another independent source, and the links you shared keep working through any of them. The more copies, run by different people in different places, the harder your files are to lose or censor.
 
 ```sh
-ipfs pin add <cid>     # on your own Kubo node
+ipfs pin add <cid>     # on your own Kubo node, or a friend's
 ```
 
-You can also add the CID to any IPFS pinning service.
+Or add the CID to an IPFS pinning service. gitpin gets your files onto IPFS; copies elsewhere are what keep them there.
 
 ---
 
@@ -115,9 +121,10 @@ The [template README](https://github.com/ipni/gitpin-template#readme) walks thro
 | Question | Answer |
 | --- | --- |
 | **Why a CID, not a URL?** | A URL names a place, and whoever controls the place decides what you get. A CID names the content: it is a hash, so a client can tell if it got anything else. The same CID works whether the bytes come from your site, a pinning service, a colleague's laptop or a public gateway. That suits citations, releases and on-chain references. |
-| **Why is IPFS publishing usually hard?** | You need a machine that stays online, runs an IPFS node, and tells the network what it holds. Pinning services need an account and often a card. |
+| **Why is IPFS publishing usually hard to start?** | You need a machine that stays online, runs an IPFS node, and tells the network what it holds, or an account with a pinning service. gitpin lets you try IPFS first with the GitHub account you already have. |
 | **What does gitpin do instead?** | IPFS clients can fetch content over plain HTTPS from any server that follows the [trustless gateway](https://specs.ipfs.tech/http-gateways/trustless-gateway/) format. They find those servers through [IPNI](https://docs.ipfs.tech/concepts/ipni/) indexers such as cid.contact. Both only need static files. So the action writes your content and its index records as static files, GitHub Pages serves them, and cid.contact reads them from your site. Nothing of ours stores your bytes. |
 | **What does "pin" mean here?** | Not copies on many machines. A pin is a file or folder in `pins/` that gitpin publishes. Your files are online exactly while your Pages site is. The CID is the lasting part: add it to a pinning service or your own node any time, and every existing link keeps working. |
+| **Is this free IPFS hosting?** | No. It is an easy way to start. GitHub hosts the bytes on its own terms (Pages is meant for websites and has size and traffic limits), and everything depends on that one company. What makes content on IPFS hard to lose or censor is several independent copies, which means pinning it on other nodes or with a pinning service as well. |
 
 ---
 
@@ -274,7 +281,7 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 | Limit | What to know |
 | --- | --- |
 | **Public** | Anyone can fetch your pins, and the CIDs and your peer ID are listed on cid.contact. Do not publish secrets or personal data. |
-| **Not durable storage** | Your files are online while your GitHub Pages site is. Delete the repo or turn off Pages and they are gone, except for copies other IPFS nodes already fetched. |
+| **One host** | Your files are online while your GitHub Pages site is. A GitHub outage, a deleted repo or a takedown makes them unreachable, except from nodes that hold a copy. On its own this is neither durable storage nor censorship resistant; [pin it elsewhere](#pin-it-elsewhere-too) for that. |
 | **Size** | At most 500 MiB and 50,000 blocks of content per repo. GitHub Pages limits a site to 1 GB and about 100 GB of traffic a month, and its terms are for websites, not bulk file hosting. |
 | **Root sites only** | Project sites (`<username>.github.io/<repo>`) are not supported: IPFS clients need the site at a domain root. |
 | **Files only** | Names starting with `.` are skipped. Symlinks fail the run with `unsupported file type: <path>`. |
