@@ -283,6 +283,114 @@ else
   bad "summary zero roots"
 fi
 
+# ---- step order -------------------------------------------------------------
+order="$(python3 -c '
+import sys, yaml
+steps = yaml.safe_load(open(sys.argv[1]))["runs"]["steps"]
+print(" ".join(s.get("name", "") for s in steps))
+print(next((s.get("id", "") for s in steps if s.get("name") == "pages"), ""))
+' "$ACTION_YML")"
+if [ "$(printf '%s\n' "$order" | sed -n 1p)" = "check setup-go build site publish push pages announce wait-indexed summary" ] \
+  && [ "$(printf '%s\n' "$order" | sed -n 2p)" = "pages" ]; then
+  ok "step order: pages runs between push and announce, id pages"
+else
+  bad "step order: $order"
+fi
+
+# ---- site step on a gh-pages branch gitpin did not write --------------------
+S5="$TMP/s5"
+setup_repo "$S5"
+git -C "$S5/ws" checkout -q -b gh-pages
+printf '# readme\n' > "$S5/ws/README.md"
+printf 'pins.example.com\n' > "$S5/ws/CNAME"
+touch "$S5/ws/.nojekyll"
+git -C "$S5/ws" add -A
+git -C "$S5/ws" commit -qm "branch made from main"
+git -C "$S5/ws" push -q origin "gh-pages:refs/heads/gh-pages"
+git -C "$S5/ws" checkout -q main
+: > "$S5/rt/site.out"
+run_step site BRANCH="gh-pages" GITHUB_WORKSPACE="$S5/ws" RUNNER_TEMP="$S5/rt" GITHUB_OUTPUT="$S5/rt/site.out"
+left="$(cd "$S5/rt/gitpin-site" && find . -mindepth 1 | sort | tr '\n' ' ')"
+if [ "$STEP_CODE" -eq 0 ] && [ "$left" = "./CNAME " ] && [ "$(cat "$S5/rt/gitpin-site/CNAME")" = "pins.example.com" ] && contains "$STEP_OUT" "::notice::"; then
+  ok "site: branch without gitpin.json starts clean, keeps CNAME, prints notice"
+else
+  bad "site: foreign branch (code=$STEP_CODE, left=$left)"
+fi
+if run_cycle "$S5" pins "$BASE_URL_TEST" "2024-03-01T00:00:00Z"; then
+  tree="$(git --git-dir="$S5/origin.git" ls-tree -r --name-only refs/heads/gh-pages)"
+  if printf '%s\n' "$tree" | grep -qx 'README.md\|pins/hello.txt'; then
+    bad "foreign branch cycle: main's files leaked into gh-pages"
+  elif ! printf '%s\n' "$tree" | grep -qx 'gitpin.json\|CNAME' || [ "$(printf '%s\n' "$tree" | grep -cx 'gitpin.json\|CNAME')" -ne 2 ]; then
+    bad "foreign branch cycle: missing gitpin.json or CNAME"
+  else
+    ok "site+publish+push on a branch made from main: only gitpin files and CNAME"
+  fi
+else
+  bad "foreign branch cycle: $CYCLE_ERR"
+fi
+# A missing branch prints no notice (the S1 first run used the same step).
+S6="$TMP/s6"
+setup_repo "$S6"
+: > "$S6/rt/site.out"
+run_step site BRANCH="gh-pages" GITHUB_WORKSPACE="$S6/ws" RUNNER_TEMP="$S6/rt" GITHUB_OUTPUT="$S6/rt/site.out"
+if [ "$STEP_CODE" -eq 0 ] && ! contains "$STEP_OUT" "::notice::"; then
+  ok "site: missing branch prints no notice"
+else
+  bad "site: missing branch (code=$STEP_CODE)"
+fi
+
+# ---- pages step against a stub GitHub API -----------------------------------
+P="$TMP/pages"
+mkdir -p "$P/rt"
+cat > "$P/server.py" <<'PY'
+import http.server, sys
+d = sys.argv[1]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/repos/alice/alice.github.io/pages":
+            self.send_response(404); self.end_headers(); return
+        status = int(open(d + "/status").read())
+        body = open(d + "/body").read().encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a): pass
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(d + "/port", "w").write(str(s.server_address[1]))
+s.serve_forever()
+PY
+echo 200 > "$P/status"; echo '{}' > "$P/body"
+python3 "$P/server.py" "$P" &
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2> /dev/null; rm -rf "$TMP"' EXIT
+for _ in $(seq 50); do [ -s "$P/port" ] && break; sleep 0.1; done
+API="http://127.0.0.1:$(cat "$P/port")"
+
+# pages_case NAME STATUS BODY BASE_URL WANT_CODE WANT_TEXT [API_URL]
+pages_case() {
+  local name="$1" status="$2" body="$3" base="$4" want="$5" text="$6" api="${7:-$API}"
+  echo "$status" > "$P/status"; printf '%s' "$body" > "$P/body"
+  run_step pages GH_TOKEN="x" BRANCH="gh-pages" BASE_URL="$base" GITHUB_API_URL="$api" GITHUB_REPOSITORY="alice/alice.github.io" RUNNER_TEMP="$P/rt"
+  if [ "$STEP_CODE" -ne "$want" ]; then bad "pages: $name (code=$STEP_CODE, want $want): $(cat "$STEP_OUT")"; return; fi
+  if [ -n "$text" ] && ! contains "$STEP_OUT" "$text"; then bad "pages: $name (no '$text'): $(cat "$STEP_OUT")"; return; fi
+  if [ -z "$text" ] && [ -s "$STEP_OUT" ]; then bad "pages: $name (unexpected output): $(cat "$STEP_OUT")"; return; fi
+  ok "pages: $name"
+}
+legacy() { printf '{"html_url":"%s","build_type":"legacy","source":{"branch":"%s","path":"%s"}}' "$1" "$2" "$3"; }
+pages_case "right branch passes silently" 200 "$(legacy https://alice.github.io/ gh-pages /)" https://alice.github.io 0 ""
+pages_case "main branch fails at once" 200 "$(legacy https://alice.github.io/ main /)" https://alice.github.io 1 "::error::GitHub Pages serves the main branch"
+if contains "$STEP_OUT" "Settings > Pages"; then ok "pages: error names Settings > Pages"; else bad "pages: error lacks Settings > Pages"; fi
+pages_case "Actions source fails" 200 '{"html_url":"https://alice.github.io/","build_type":"workflow","source":null}' https://alice.github.io 1 "from GitHub Actions"
+pages_case "docs folder fails" 200 "$(legacy https://alice.github.io/ gh-pages /docs)" https://alice.github.io 1 "(folder /docs)"
+pages_case "other host is skipped" 200 "$(legacy https://alice.github.io/ main /)" https://pins.example.com 0 ""
+pages_case "host match ignores case and port" 200 "$(legacy https://Alice.GitHub.io/ gh-pages /)" https://alice.github.io:443 0 ""
+pages_case "403 skips with pages: read hint" 403 '{"message":"Resource not accessible by integration"}' https://alice.github.io 0 "pages: read"
+if contains "$STEP_OUT" "could not read the GitHub Pages settings"; then ok "pages: 403 notice text"; else bad "pages: 403 notice text"; fi
+pages_case "404 skips with notice" 404 '{"message":"Not Found"}' https://alice.github.io 0 "could not read the GitHub Pages settings (status 404)"
+pages_case "no API skips with notice" 200 '{}' https://alice.github.io 0 "could not read the GitHub Pages settings (no response)" "http://127.0.0.1:1"
+
 # The announce step is skipped: it needs a live indexer (cid.contact).
 
 echo "----"

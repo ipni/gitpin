@@ -81,6 +81,14 @@ runs:
         if [ "$code" -eq 0 ]; then
           git fetch --no-tags --depth=1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
           git archive "refs/remotes/origin/$BRANCH" | tar -x -C "$site"
+          if [ ! -f "$site/gitpin.json" ]; then
+            # Not a gitpin site yet (for example a branch made from main): start clean, keep CNAME.
+            cname=""
+            if [ -f "$site/CNAME" ]; then cname=$(cat "$site/CNAME"); fi
+            find "$site" -mindepth 1 -delete
+            if [ -n "$cname" ]; then printf '%s\n' "$cname" > "$site/CNAME"; fi
+            echo "::notice::The $BRANCH branch has no gitpin.json, so gitpin starts a fresh site there (keeping only CNAME)."
+          fi
         elif [ "$code" -ne 2 ]; then
           echo "::error::failed to look up branch $BRANCH (git ls-remote exit $code); refusing to continue"
           exit 1
@@ -120,6 +128,47 @@ runs:
         commit=$(GIT_AUTHOR_NAME="github-actions[bot]" GIT_AUTHOR_EMAIL="41898282+github-actions[bot]@users.noreply.github.com" GIT_COMMITTER_NAME="github-actions[bot]" GIT_COMMITTER_EMAIL="41898282+github-actions[bot]@users.noreply.github.com" git commit-tree "$tree" -m "gitpin: publish $HEAD_CID ($(date -u +%Y-%m-%dT%H:%M:%SZ))")
         git push --force origin "$commit:refs/heads/$BRANCH"
         unset GIT_INDEX_FILE
+    - name: pages
+      id: pages
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BRANCH: ${{ inputs.branch }}
+        BASE_URL: ${{ steps.check.outputs.base_url }}
+      run: |
+        # Fail at once when this repo's Pages site is the one serving base-url but
+        # points somewhere else; otherwise announce would wait 10 minutes and fail.
+        api="${GITHUB_API_URL:-https://api.github.com}"
+        body="$RUNNER_TEMP/gitpin-pages.json"
+        status=$(curl -sS --noproxy '*' --max-time 20 -o "$body" -w '%{http_code}' \
+          -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+          "$api/repos/$GITHUB_REPOSITORY/pages" 2> /dev/null || true)
+        if [ "$status" != "200" ]; then
+          case "$status" in
+            ""|000) why="no response" ;;
+            403) why="status 403; add pages: read to the workflow's permissions to get this check" ;;
+            *) why="status $status" ;;
+          esac
+          echo "::notice::gitpin could not read the GitHub Pages settings ($why); skipping the Pages source check."
+          exit 0
+        fi
+        host() { printf '%s' "$1" | sed -E 's#^[a-zA-Z]+://##; s#[/?].*$##; s#:[0-9]*$##' | tr '[:upper:]' '[:lower:]'; }
+        pages_host=$(host "$(jq -r '.html_url // empty' "$body" 2> /dev/null || true)")
+        if [ -z "$pages_host" ] || [ "$pages_host" != "$(host "$BASE_URL")" ]; then
+          exit 0
+        fi
+        build_type=$(jq -r '.build_type // empty' "$body" 2> /dev/null || true)
+        src_branch=$(jq -r '.source.branch // empty' "$body" 2> /dev/null || true)
+        src_path=$(jq -r '.source.path // empty' "$body" 2> /dev/null || true)
+        if [ "$build_type" = "workflow" ]; then
+          serves="from GitHub Actions"
+        elif [ "$src_branch" != "$BRANCH" ] || [ "$src_path" != "/" ]; then
+          serves="the $src_branch branch (folder $src_path)"
+        else
+          exit 0
+        fi
+        echo "::error::GitHub Pages serves $serves but gitpin pushed to the $BRANCH branch. In Settings > Pages > Build and deployment, set Source \"Deploy from a branch\", Branch $BRANCH, folder / (root), Save, then re-run this workflow."
+        exit 1
     - name: announce
       shell: bash
       env:

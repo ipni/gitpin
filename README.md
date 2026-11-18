@@ -108,9 +108,9 @@ You need a GitHub account and a terminal with `ssh-keygen` (built into macOS, Li
 
    When it asks for a passphrase, press **Enter** twice (gitpin needs a key without one). This makes two files in the current folder: `gitpin-key` (the private key) and `gitpin-key.pub`. Make a new key just for gitpin, never reuse your own SSH login key: any workflow in the repo can read the secret.
 3. **Add the secret.** Open `gitpin-key` in a text editor and copy all of it, including the `BEGIN` and `END` lines. In the new repo: **Settings** > **Secrets and variables** > **Actions** > **New repository secret**. Name it `GITPIN_KEY`, paste, click **Add secret**. Then delete both key files; the secret is the only copy you need.
-4. **Run the workflow once.** **Actions** tab > **gitpin** workflow > **Run workflow**. This run creates the `gh-pages` branch, then waits up to 10 minutes for Pages and fails, because Pages is not serving that branch yet. That is expected.
-5. **Point Pages at `gh-pages`.** **Settings** > **Pages** > **Build and deployment**: Source **Deploy from a branch**, Branch `gh-pages`, folder `/ (root)`, **Save**. GitHub usually has Pages on already for a repo named `<your-username>.github.io`, serving `main`. You only change the branch.
-6. **Re-run the workflow.** When it is green, the run summary lists each pin with its CID and links.
+4. **Create the `gh-pages` branch.** On the repo's main page, open the branch menu (it shows `main`), type `gh-pages`, and click the option to create the branch from `main`. gitpin replaces its contents on the first run.
+5. **Point Pages at it.** **Settings** > **Pages** > **Build and deployment**: Source **Deploy from a branch**, Branch `gh-pages`, folder `/ (root)`, **Save**. GitHub usually has Pages on already for a repo named `<your-username>.github.io`, serving `main`. You only change the branch.
+6. **Run the workflow.** **Actions** tab > **gitpin** workflow > **Run workflow**. When it is green, the run summary lists each pin with its CID and links. The first run takes a few minutes longer while Pages deploys.
 
 The [template README](https://github.com/ipni/gitpin-template#readme) walks through the same steps for people new to GitHub Actions. Already have a `<your-username>.github.io` repo? If you already use it for a website, adding gitpin to it would replace that website, so [use a custom domain](#use-a-custom-domain) or create the repo under a GitHub organization you own.
 
@@ -196,6 +196,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  pages: read
 concurrency:
   group: gitpin
   cancel-in-progress: false
@@ -210,6 +211,8 @@ jobs:
 ```
 
 </details>
+
+**`pages: read`** lets the action stop at once, with the fix, when Pages points at the wrong branch. Workflows made before it was added still work; without it a wrong Pages setting shows up as a 10-minute wait that ends in "is not serving the new head yet".
 
 **Keep the default credentials.** Leave `actions/checkout` as it is: `persist-credentials: false` breaks the push to `gh-pages`.
 
@@ -236,10 +239,10 @@ With a custom domain the repo can have any name, and an account that already use
 
 1. **Point the domain at GitHub Pages** with DNS (see GitHub's custom domain docs).
 2. **Set the base URL.** Add `base-url: https://your.domain` under `with:` in the workflow.
-3. **Run the workflow once.** It creates the `gh-pages` branch, then fails after its wait, because Pages is not serving that branch yet.
+3. **Create the `gh-pages` branch** from the branch menu, as in step 4 of [Get started](#get-started).
 4. **Set up Pages.** In **Settings** > **Pages**, set the source to branch `gh-pages`, folder `/ (root)`, and enter the domain. GitHub writes a `CNAME` file to `gh-pages`, which gitpin keeps.
 5. **Wait for HTTPS.** GitHub issues the certificate only after you enter the domain, which can take a while. Wait until `https://your.domain` loads with a valid certificate (the **Enforce HTTPS** box becomes available). Until then the run fails with "is not serving the new head yet (last status no response)".
-6. **Run the workflow again.**
+6. **Run the workflow.**
 
 ---
 
@@ -297,6 +300,13 @@ gitpin wait-indexed --site site [--indexer URL] [--timeout 15m]
 <summary>"... is not serving the new head yet"</summary>
 
 Pages is off, its source is not the `gh-pages` branch, the repo is private, the repo is not named `<owner>.github.io` and no `base-url` is set, or a custom domain is not pointing at Pages yet. Fix the setting and re-run the workflow.
+
+</details>
+
+<details>
+<summary>"GitHub Pages serves ... but gitpin pushed to ..."</summary>
+
+Pages is serving another branch or folder, or deploys from GitHub Actions. Set it as the message says (**Settings** > **Pages**: **Deploy from a branch**, `gh-pages`, `/ (root)`) and re-run the workflow.
 
 </details>
 
