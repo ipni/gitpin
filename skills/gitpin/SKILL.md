@@ -98,7 +98,7 @@ git clone -q -b main https://github.com/$R.git "$W/site" && cd "$W/site"
 cp /path/to/file pins/ && git add pins && git commit -qm "Pin <file>" && git push -q
 ```
 
-- Each top-level entry in `pins/` gets one CID. A folder gets one directory CID, and its files are reachable at `<cid>/path`.
+- Each top-level entry in `pins/` gets one CID. A folder gets one directory CID and nothing more: files inside it get no entries of their own in `gitpin.json` or the run summary. Reach them as `<cid>/path` through an IPFS client (see step 7). This is expected and doesn't need investigating. If the user wants a CID per file, put each file at the top level of `pins/` instead.
 - Names starting with `.` are skipped, and symlinks fail the run.
 - Editing a file gives it a new CID, and deleting it unpublishes it. Never delete `pins/`, because that unpublishes everything.
 - To pin several files, put them in one commit so they go out in one run.
@@ -125,6 +125,17 @@ curl -s https://$O.github.io/gitpin.json | jq -r '.roots[] | "\(.name) \(.cid)"'
 curl -s https://$O.github.io/ipfs/<cid>              # a file of 256 KiB or less is one raw block, returned as-is
 curl -s https://cid.contact/cid/<cid> | jq .          # provider record once indexed
 ```
+
+For a folder pin, `curl https://$O.github.io/ipfs/<cid>` returns the directory's root
+block (binary, a 200 means it's published), and `<cid>/file` returns 404 on plain HTTP.
+Pages only serves blocks by CID and can't walk a directory, so that 404 is expected and
+not a failure. Verify the folder with the 200 on the root block plus the cid.contact
+record, and stop there. Don't compute CIDs yourself (hashing files, encoding base32) or
+check files inside a folder one by one. `gitpin.json` and the run summary are the only
+source of CIDs, and a successful run means every block was published. A locally computed
+CID that 404s usually means the local file changed after it was pinned, or a different
+chunking or encoding than gitpin's, not a broken pin. Report the CIDs and finish. For file links, give `https://inbrowser.link/ipfs/<cid>/<path>` or
+`ipfs cat <cid>/<path>`, which do the lookup in the client.
 
 Give the user the CID, `ipfs://<cid>`, `https://inbrowser.link/ipfs/<cid>` and
 `https://cid.contact/cid/<cid>`. Add one caveat: only their Pages site serves the
