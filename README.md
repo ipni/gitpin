@@ -2,7 +2,7 @@
 
 **A hands-on first step into IPFS: publish files straight from a GitHub repo, with no IPFS node to run.**
 
-On the web, a link says *where* a file is. On [IPFS](https://ipfs.tech), a link says *what* the file is. Every file gets a **CID** (content identifier), a fingerprint computed from its exact bytes, such as `bafkreidq7f...`. Anyone who fetches a CID can check that the bytes they got are the ones it names, and the same CID works whichever server sends them. That makes a CID a good way to cite a dataset, ship a release, or point at an NFT or website asset that must never change under you.
+On the web, a link says where a file is but on [IPFS](https://ipfs.tech), a link says *what* the file is. Every file gets a **CID** (content identifier), a fingerprint computed from its exact bytes, such as `bafkreidq7f...`. Anyone who fetches a CID can check that the bytes they got are the ones it names, and the same CID works whichever server sends them. That makes a CID a good way to cite a dataset, ship a release, or point at an NFT or website asset that must never change.
 
 gitpin gets your files a CID without running any IPFS software. Drop a file into your repo's `pins/` folder and push. A GitHub Action publishes it, and the run summary shows its CID with links you can share.
 
@@ -15,7 +15,9 @@ flowchart LR
     C --> E
 ```
 
-> **A starting point, not a safe home.** gitpin serves your files from one place: your GitHub Pages site. If GitHub has an outage, the repo goes away, or the content is taken down, the CID stops resolving unless someone else holds a copy. IPFS is resilient and censorship resistant only when several independent nodes hold the content, so for anything that matters, also [pin it elsewhere](#pin-it-elsewhere-too).
+> **This is starting point for IPFS, not a safe home for your essential data.** gitpin serves your files from one place: your GitHub Pages site. If GitHub has an outage, the repo goes away, or the content is taken down, the CID stops resolving unless someone else holds a copy. IPFS is resilient and censorship resistant only when several independent nodes hold the content, so for anything that matters, also [pin it elsewhere](#pin-it-elsewhere-too).
+
+---
 
 **Jump to:** [First example](#example-your-first-cid) | [More examples](#more-examples) | [Pin elsewhere](#pin-it-elsewhere-too) | [Get started](#get-started) | [AI agent](#let-an-ai-agent-do-it) | [Why](#why-gitpin) | [How it works](#how-it-works) | [Configuration](#configuration) | [Custom domain](#use-a-custom-domain) | [Command line](#command-line) | [Limits](#limits) | [Troubleshooting](#troubleshooting) | [Contributing](#contributing) | [License](#license)
 
